@@ -28,4 +28,5 @@ jobs:
           RECEIVER_EMAIL: ${{ secrets.RECEIVER_EMAIL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GEMINI_MODEL: ${{ secrets.GEMINI_MODEL || vars.GEMINI_MODEL }}
         run: python -B weekly_report_sender.py

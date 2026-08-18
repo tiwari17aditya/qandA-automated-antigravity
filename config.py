@@ -7,28 +7,43 @@ from dotenv import load_dotenv
 env_path = Path(__file__).resolve().parent / ".env"
 load_dotenv(dotenv_path=env_path)
 
+def _get_str_env(key: str, default: str = "") -> str:
+    val = os.getenv(key)
+    if val is None or not str(val).strip():
+        return default
+    return str(val).strip()
+
+def _get_int_env(key: str, default: int) -> int:
+    val = os.getenv(key)
+    if val is None or not str(val).strip():
+        return default
+    try:
+        return int(str(val).strip())
+    except (ValueError, TypeError):
+        return default
+
 # ==========================================
 # 🔑 CREDENTIALS & REQUIRED SETTINGS
 # ==========================================
-SENDER_EMAIL = os.getenv("SENDER_EMAIL", "").strip()
-APP_PASSWORD = os.getenv("APP_PASSWORD", "").strip()
-RECEIVER_EMAIL = os.getenv("RECEIVER_EMAIL", "").strip()
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
-DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+SENDER_EMAIL = _get_str_env("SENDER_EMAIL", "")
+APP_PASSWORD = _get_str_env("APP_PASSWORD", "")
+RECEIVER_EMAIL = _get_str_env("RECEIVER_EMAIL", "")
+GEMINI_API_KEY = _get_str_env("GEMINI_API_KEY", "")
+DATABASE_URL = _get_str_env("DATABASE_URL", "")
 
 # ==========================================
 # ⚙️ CUSTOMIZABLE DRILL PREFERENCES
 # ==========================================
 # Gemini Model used for question generation (Default: gemini-2.5-flash)
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
+GEMINI_MODEL = _get_str_env("GEMINI_MODEL", "gemini-2.5-flash")
 
 # Specific topics separated by comma (e.g. "Indus Valley Civilization (IVC), ICT")
 # If left blank, general MPPSC Prelims syllabus mix is used.
-TOPICS = os.getenv("TOPICS", "").strip()
+TOPICS = _get_str_env("TOPICS", "")
 
 # Number of questions per topic (if TOPICS is specified) or total questions
-QUESTIONS_PER_TOPIC = int(os.getenv("QUESTIONS_PER_TOPIC", "15"))
-TOTAL_QUESTIONS = int(os.getenv("TOTAL_QUESTIONS", "15"))
+QUESTIONS_PER_TOPIC = _get_int_env("QUESTIONS_PER_TOPIC", 15)
+TOTAL_QUESTIONS = _get_int_env("TOTAL_QUESTIONS", 15)
 
 def get_quiz_prompt():
     """Builds dynamic token-optimized prompt based on specified topics in .env."""

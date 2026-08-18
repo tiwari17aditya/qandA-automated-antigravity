@@ -27,7 +27,8 @@ jobs:
           APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
           RECEIVER_EMAIL: ${{ secrets.RECEIVER_EMAIL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
           TOPICS: ${{ secrets.TOPICS || vars.TOPICS }}
           QUESTIONS_PER_TOPIC: ${{ secrets.QUESTIONS_PER_TOPIC || vars.QUESTIONS_PER_TOPIC }}
+          TOTAL_QUESTIONS: ${{ secrets.TOTAL_QUESTIONS || vars.TOTAL_QUESTIONS }}
+          GEMINI_MODEL: ${{ secrets.GEMINI_MODEL || vars.GEMINI_MODEL }}
         run: python -B daily_quiz_sender.py
