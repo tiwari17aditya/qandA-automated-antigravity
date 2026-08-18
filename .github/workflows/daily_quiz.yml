@@ -8,14 +8,19 @@ on:
 jobs:
   send-quiz:
     runs-on: ubuntu-latest
+    env:
+      PYTHONDONTWRITEBYTECODE: "1" # Do not write .pyc cache files
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1 # Minimal git history to save storage
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install dependencies
-        run: pip install -r requirements.txt
+          cache: '' # Disable pip caching to avoid consuming GitHub storage
+      - name: Install dependencies (No-Cache)
+        run: pip install --no-cache-dir -r requirements.txt
       - name: Generate & Send Quiz
         env:
           SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
@@ -25,4 +30,4 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           TOPICS: ${{ secrets.TOPICS || vars.TOPICS }}
           QUESTIONS_PER_TOPIC: ${{ secrets.QUESTIONS_PER_TOPIC || vars.QUESTIONS_PER_TOPIC }}
-        run: python daily_quiz_sender.py
+        run: python -B daily_quiz_sender.py

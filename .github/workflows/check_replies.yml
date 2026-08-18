@@ -2,23 +2,25 @@ name: 2. Check Reply & Auto-Evaluate (Every 8 Hours)
 
 on:
   schedule:
-    # 02:30 UTC = 08:00 AM IST
-    # 10:30 UTC = 04:00 PM IST
-    # 18:30 UTC = 12:00 AM Midnight IST
     - cron: '30 2,10,18 * * *'
   workflow_dispatch:
 
 jobs:
   evaluate-quiz:
     runs-on: ubuntu-latest
+    env:
+      PYTHONDONTWRITEBYTECODE: "1" # Do not write .pyc cache files
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1 # Minimal git history to save storage
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install dependencies
-        run: pip install -r requirements.txt
+          cache: '' # Disable pip caching to avoid consuming GitHub storage
+      - name: Install dependencies (No-Cache)
+        run: pip install --no-cache-dir -r requirements.txt
       - name: Evaluate Replies & Track Absent Tests
         env:
           SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
@@ -26,4 +28,4 @@ jobs:
           RECEIVER_EMAIL: ${{ secrets.RECEIVER_EMAIL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: python email_evaluator.py
+        run: python -B email_evaluator.py

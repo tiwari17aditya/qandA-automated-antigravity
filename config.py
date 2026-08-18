@@ -31,7 +31,8 @@ QUESTIONS_PER_TOPIC = int(os.getenv("QUESTIONS_PER_TOPIC", "15"))
 TOTAL_QUESTIONS = int(os.getenv("TOTAL_QUESTIONS", "15"))
 
 def get_quiz_prompt():
-    """Builds dynamic prompt based on specified topics in .env."""
+    """Builds dynamic token-optimized prompt based on specified topics in .env."""
+    token_opt_rule = "Constraints: Keep questions crisp. Keep explanation ultra-concise (max 15 words). Output pure JSON only."
     if TOPICS:
         topic_list = [t.strip() for t in TOPICS.split(",") if t.strip()]
         topic_bullets = "\n".join([f"- {t} ({QUESTIONS_PER_TOPIC} questions)" for t in topic_list])
@@ -41,6 +42,8 @@ Generate {total_q} high-yield Multiple Choice Questions strictly for MPPSC State
 Provide exactly {QUESTIONS_PER_TOPIC} questions for EACH of the following topics:
 {topic_bullets}
 
+{token_opt_rule}
+
 Return ONLY valid JSON matching this schema:
 [
   {{
@@ -49,7 +52,7 @@ Return ONLY valid JSON matching this schema:
     "question": "Question text?",
     "options": {{"A": "...", "B": "...", "C": "...", "D": "..."}},
     "correct_option": "A",
-    "explanation": "Brief context/fact."
+    "explanation": "Brief context/fact (<=15 words)."
   }}
 ]
 """.strip()
@@ -57,6 +60,8 @@ Return ONLY valid JSON matching this schema:
         return f"""
 Generate {TOTAL_QUESTIONS} high-yield Multiple Choice Questions strictly for MPPSC State Services Prelims.
 Mix: MP GK (History, Geography, Polity, Economy), Unit 9 ICT & Tech, Unit 10 MP Tribes & Culture, Indian Polity, History, Science.
+
+{token_opt_rule}
 
 Return ONLY valid JSON matching this schema:
 [
@@ -66,7 +71,7 @@ Return ONLY valid JSON matching this schema:
     "question": "Question text?",
     "options": {{"A": "...", "B": "...", "C": "...", "D": "..."}},
     "correct_option": "A",
-    "explanation": "Brief context/fact."
+    "explanation": "Brief context/fact (<=15 words)."
   }}
 ]
 """.strip()
