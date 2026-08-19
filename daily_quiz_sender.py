@@ -18,21 +18,19 @@ from config import (
     validate_config,
 )
 from db import get_db_connection, init_and_migrate_db, mark_expired_tests_absent
-from alert_utils import send_error_alert, gemini_generate_with_retry
+from alert_utils import send_error_alert, generate_ai_completion, clean_ai_json_output
 
 def generate_questions():
     prompt = get_quiz_prompt()
     topic_desc = TOPICS if TOPICS else "General MPPSC Mix"
-    print(f"[2/4] Generating questions with Gemini ({GEMINI_MODEL}) for: {topic_desc}...")
+    print(f"[2/4] Generating questions with AI for: {topic_desc}...")
     
-    client = genai.Client(api_key=GEMINI_API_KEY)
-    response = gemini_generate_with_retry(
-        client=client,
-        model=GEMINI_MODEL,
+    raw_response = generate_ai_completion(
         prompt=prompt,
-        config={"response_mime_type": "application/json"}
+        response_json=True
     )
-    questions = json.loads(response.text)
+    cleaned_json = clean_ai_json_output(raw_response)
+    questions = json.loads(cleaned_json)
     print(f"      Generated {len(questions)} questions successfully.")
     return questions
 

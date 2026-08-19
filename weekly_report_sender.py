@@ -14,12 +14,12 @@ from config import (
     validate_config,
 )
 from db import get_db_connection, init_and_migrate_db, mark_expired_tests_absent
-from alert_utils import send_error_alert, gemini_generate_with_retry
+from alert_utils import send_error_alert, generate_ai_completion
 
 def generate_ai_study_recommendation(summary_data, weak_topics):
     """
-    Prompts Gemini to generate a personalized MPPSC Prelims study strategy
-    based on the student's weekly accuracy and weak topics.
+    Generates a personalized MPPSC Prelims study strategy
+    based on the student's weekly accuracy and weak topics using AI fallback chain.
     """
     weak_str = ", ".join([f"{t['topic']} ({t['accuracy']:.0f}%)" for t in weak_topics]) if weak_topics else "None (Keep maintaining high performance!)"
     
@@ -39,13 +39,8 @@ def generate_ai_study_recommendation(summary_data, weak_topics):
     Keep tone encouraging, rigorous, and direct. Format with clean HTML bullet points.
     """
     
-    client = genai.Client(api_key=GEMINI_API_KEY)
-    response = gemini_generate_with_retry(
-        client=client,
-        model=GEMINI_MODEL,
-        prompt=prompt
-    )
-    return response.text.strip()
+    response_text = generate_ai_completion(prompt=prompt, response_json=False)
+    return response_text.strip()
 
 def build_weekly_html(start_date, end_date, summary_data, daily_rows, topic_rows, ai_advice_html):
     att_color = "#38a169" if summary_data['att_rate'] >= 80 else "#d69e2e" if summary_data['att_rate'] >= 60 else "#e53e3e"

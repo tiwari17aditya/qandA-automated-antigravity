@@ -29,13 +29,18 @@ SENDER_EMAIL = _get_str_env("SENDER_EMAIL", "")
 APP_PASSWORD = _get_str_env("APP_PASSWORD", "")
 RECEIVER_EMAIL = _get_str_env("RECEIVER_EMAIL", "")
 GEMINI_API_KEY = _get_str_env("GEMINI_API_KEY", "")
+GROQ_API_KEY = _get_str_env("GROQ_API_KEY", "")
 DATABASE_URL = _get_str_env("DATABASE_URL", "")
 
 # ==========================================
 # ⚙️ CUSTOMIZABLE DRILL PREFERENCES
 # ==========================================
-# Gemini Model used for question generation (Default: gemini-2.5-flash)
+# Primary LLM Provider: "gemini" or "groq" (auto-fallbacks between both)
+LLM_PROVIDER = _get_str_env("LLM_PROVIDER", "gemini").lower()
+
+# Model used for question generation (e.g. gemini-2.5-flash, deepseek-r1-distill-llama-70b, qwen-2.5-32b)
 GEMINI_MODEL = _get_str_env("GEMINI_MODEL", "gemini-2.5-flash")
+GROQ_MODEL = _get_str_env("GROQ_MODEL", "deepseek-r1-distill-llama-70b")
 
 # Specific topics separated by comma (e.g. "Indus Valley Civilization (IVC), ICT")
 # If left blank, general MPPSC Prelims syllabus mix is used.
@@ -107,10 +112,22 @@ def validate_config(required_keys=None):
         "APP_PASSWORD": APP_PASSWORD,
         "RECEIVER_EMAIL": RECEIVER_EMAIL,
         "GEMINI_API_KEY": GEMINI_API_KEY,
+        "GROQ_API_KEY": GROQ_API_KEY,
         "DATABASE_URL": DATABASE_URL,
     }
 
-    missing = [k for k in required_keys if not current_config.get(k)]
+    missing = []
+    for k in required_keys:
+        if k == "AI_KEY":
+            if not GEMINI_API_KEY and not GROQ_API_KEY:
+                missing.append("GEMINI_API_KEY or GROQ_API_KEY")
+        elif k == "GEMINI_API_KEY":
+            if not GEMINI_API_KEY and not GROQ_API_KEY:
+                missing.append("GEMINI_API_KEY (or GROQ_API_KEY)")
+        else:
+            if not current_config.get(k):
+                missing.append(k)
+
     if missing:
         error_msg = (
             f"\n[ERROR] Configuration Error: Missing required settings / GitHub Secrets:\n"

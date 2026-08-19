@@ -1,12 +1,19 @@
-import time
-import random
-import smtplib
-import traceback
-from datetime import datetime
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
+import re
+import json
+import urllib.request
+import urllib.error
+from google import genai
 
-from config import SENDER_EMAIL, APP_PASSWORD, RECEIVER_EMAIL
+from config import (
+    SENDER_EMAIL,
+    APP_PASSWORD,
+    RECEIVER_EMAIL,
+    GEMINI_API_KEY,
+    GROQ_API_KEY,
+    LLM_PROVIDER,
+    GEMINI_MODEL,
+    GROQ_MODEL,
+)
 
 def send_error_alert(service_name, error, extra_info=""):
     """
@@ -58,47 +65,121 @@ def send_error_alert(service_name, error, extra_info=""):
     except Exception as alert_err:
         print(f"[CRITICAL] Failed to send error alert email: {alert_err}")
 
+def clean_ai_json_output(raw_text: str) -> str:
+    """
+    Cleans raw AI completion by stripping DeepSeek reasoning <think> tags
+    and markdown ```json ... ``` wrappers.
+    """
+    # 1. Remove <think>...</think> reasoning blocks (e.g. from DeepSeek R1)
+    cleaned = re.sub(r"<think>[\s\S]*?</think>", "", raw_text, flags=re.DOTALL).strip()
+    
+    # 2. Extract JSON content inside markdown code blocks
+    fence_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", cleaned)
+    if fence_match:
+        cleaned = fence_match.group(1).strip()
+    return cleaned
+
+def call_groq_api(api_key: str, model: str, prompt: str, response_json: bool = False) -> str:
+    """
+    Direct HTTP client for Groq OpenAI-compatible chat completion API.
+    Zero external dependencies, fast and lightweight.
+    """
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "User-Agent": "MPPSC-Quiz-Bot/2.0",
+    }
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.3,
+    }
+    if response_json:
+        payload["response_format"] = {"type": "json_object"}
+
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+
+    with urllib.request.urlopen(req, timeout=35) as resp:
+        res_data = json.loads(resp.read().decode("utf-8"))
+        return res_data["choices"][0]["message"]["content"]
+
+def generate_ai_completion(prompt: str, response_json: bool = False) -> str:
+    """
+    Unified multi-provider AI completion engine with automatic failover across:
+    1. Google Gemini Pool: gemini-2.5-flash, gemini-2.0-flash, gemini-2.0-flash-lite, gemini-1.5-flash
+    2. Groq Open-Source Pool: deepseek-r1-distill-llama-70b, qwen-2.5-32b, mistral-saba-24b, gemma2-9b-it
+    """
+    gemini_models = [GEMINI_MODEL, "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-2.5-flash", "gemini-1.5-flash"]
+    groq_models = [GROQ_MODEL, "deepseek-r1-distill-llama-70b", "qwen-2.5-32b", "mistral-saba-24b", "gemma2-9b-it"]
+
+    # Filter duplicates while preserving order
+    gemini_pool = [m for i, m in enumerate(gemini_models) if m and m not in gemini_models[:i]]
+    groq_pool = [m for i, m in enumerate(groq_models) if m and m not in groq_models[:i]]
+
+    # Determine provider priority based on LLM_PROVIDER
+    if LLM_PROVIDER == "groq" and GROQ_API_KEY:
+        provider_order = [("groq", groq_pool), ("gemini", gemini_pool)]
+    else:
+        provider_order = [("gemini", gemini_pool), ("groq", groq_pool)]
+
+    last_error = None
+
+    for provider, model_list in provider_order:
+        if provider == "gemini":
+            if not GEMINI_API_KEY:
+                continue
+            client = genai.Client(api_key=GEMINI_API_KEY)
+            for model_name in model_list:
+                for attempt in range(1, 3):
+                    try:
+                        print(f"      Attempting AI generation with Gemini ({model_name})...")
+                        kwargs = {"model": model_name, "contents": prompt}
+                        if response_json:
+                            kwargs["config"] = {"response_mime_type": "application/json"}
+                        res = client.models.generate_content(**kwargs)
+                        if res and res.text:
+                            return res.text
+                    except Exception as e:
+                        last_error = e
+                        err_msg = str(e).lower()
+                        print(f"[WARN] Gemini ({model_name}) error: {e}")
+                        if attempt < 2 and any(t in err_msg for t in ["429", "503", "unavailable", "quota", "temporary"]):
+                            time.sleep(2.0 + random.uniform(0.5, 1.5))
+
+        elif provider == "groq":
+            if not GROQ_API_KEY:
+                continue
+            for model_name in model_list:
+                for attempt in range(1, 3):
+                    try:
+                        print(f"      Attempting AI generation with Groq Open-Source ({model_name})...")
+                        raw_text = call_groq_api(GROQ_API_KEY, model_name, prompt, response_json=response_json)
+                        if raw_text:
+                            return raw_text
+                    except Exception as e:
+                        last_error = e
+                        print(f"[WARN] Groq ({model_name}) error: {e}")
+                        if attempt < 2:
+                            time.sleep(2.0 + random.uniform(0.5, 1.5))
+
+    if last_error:
+        raise last_error
+    raise RuntimeError("No AI API keys configured or all AI providers failed.")
+
 def gemini_generate_with_retry(client, model, prompt, config=None, max_retries=3, base_delay=3.0):
     """
-    Executes Gemini API generation with exponential backoff, jitter, and automatic
-    model fallback to handle rate limits (429), high demand (503 UNAVAILABLE), and server errors.
+    Backwards-compatible wrapper delegating to generate_ai_completion.
     """
-    candidate_models = []
-    for m in [model, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]:
-        if m and m not in candidate_models:
-            candidate_models.append(m)
+    is_json = bool(config and config.get("response_mime_type") == "application/json")
+    text = generate_ai_completion(prompt=prompt, response_json=is_json)
+    
+    class FakeResponse:
+        def __init__(self, t):
+            self.text = t
+    return FakeResponse(text)
 
-    last_exception = None
-    for target_model in candidate_models:
-        for attempt in range(1, max_retries + 1):
-            try:
-                kwargs = {"model": target_model, "contents": prompt}
-                if config:
-                    kwargs["config"] = config
-                response = client.models.generate_content(**kwargs)
-                if target_model != model:
-                    print(f"      [INFO] Successfully generated questions using fallback model: {target_model}")
-                return response
-            except Exception as e:
-                last_exception = e
-                err_msg = str(e).lower()
-                is_transient = any(term in err_msg for term in [
-                    "429", "resource_exhausted", "quota", "rate limit", "too many requests",
-                    "503", "unavailable", "high demand", "overloaded", "temporary",
-                    "500", "502", "504", "internal error", "server error", "deadline_exceeded"
-                ])
-
-                if attempt < max_retries and is_transient:
-                    sleep_time = min(base_delay * (2 ** (attempt - 1)) + random.uniform(1.0, 2.5), 25.0)
-                    print(f"[WARN] Gemini transient error on '{target_model}' (attempt {attempt}/{max_retries}): {e}. Retrying in {sleep_time:.1f}s...")
-                    time.sleep(sleep_time)
-                else:
-                    if len(candidate_models) > 1 and target_model != candidate_models[-1]:
-                        print(f"[WARN] Model '{target_model}' unavailable. Trying next model in pool...")
-                        break
-                    else:
-                        raise e
-
-    if last_exception:
-        raise last_exception
 
