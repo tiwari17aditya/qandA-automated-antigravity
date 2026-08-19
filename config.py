@@ -55,12 +55,14 @@ def get_quiz_prompt():
     token_opt_rule = "Constraints: Keep questions crisp. Keep explanation ultra-concise (max 15 words). Output pure JSON only."
     if TOPICS:
         topic_list = [t.strip() for t in TOPICS.split(",") if t.strip()]
-        topic_bullets = "\n".join([f"- {t} ({QUESTIONS_PER_TOPIC} questions)" for t in topic_list])
+        topic_bullets = "\n".join([f"- {t}: exactly {QUESTIONS_PER_TOPIC} questions" for t in topic_list])
         total_q = len(topic_list) * QUESTIONS_PER_TOPIC
         return f"""
-Generate {total_q} high-yield Multiple Choice Questions strictly for MPPSC State Services Prelims.
-Provide exactly {QUESTIONS_PER_TOPIC} questions for EACH of the following topics:
+Generate exactly {total_q} Multiple Choice Questions strictly for MPPSC State Services Prelims.
+CRITICAL CONSTRAINT: You MUST generate questions EXCLUSIVELY for the following specified topic(s). DO NOT include general questions from other subjects:
 {topic_bullets}
+
+Each question's 'topic' field MUST be set to the exact matching topic name from the list above.
 
 {token_opt_rule}
 
@@ -68,8 +70,8 @@ Return ONLY valid JSON matching this schema:
 [
   {{
     "q_num": 1,
-    "topic": "Topic Name Here",
-    "question": "Question text?",
+    "topic": "{topic_list[0]}",
+    "question": "Question text strictly on this topic?",
     "options": {{"A": "...", "B": "...", "C": "...", "D": "..."}},
     "correct_option": "A",
     "explanation": "Brief context/fact (<=15 words)."
