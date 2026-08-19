@@ -1,26 +1,43 @@
 import os
 import sys
 from pathlib import Path
+import dotenv
 from dotenv import load_dotenv
 
-# Load .env file from the project directory
+# 1. Load defaults from .env.example (tracked in git)
+example_defaults = {}
+example_env_path = Path(__file__).resolve().parent / ".env.example"
+if example_env_path.exists():
+    example_defaults = dotenv.dotenv_values(dotenv_path=example_env_path)
+
+# 2. Load overrides from local .env if present
 env_path = Path(__file__).resolve().parent / ".env"
-load_dotenv(dotenv_path=env_path)
+if env_path.exists():
+    load_dotenv(dotenv_path=env_path, override=True)
 
 def _get_str_env(key: str, default: str = "") -> str:
     val = os.getenv(key)
-    if val is None or not str(val).strip():
-        return default
-    return str(val).strip()
+    if val is not None and str(val).strip():
+        return str(val).strip()
+    fallback = example_defaults.get(key, default)
+    if fallback is not None and str(fallback).strip() and not str(fallback).strip().startswith("your_"):
+        return str(fallback).strip()
+    return default
 
 def _get_int_env(key: str, default: int) -> int:
     val = os.getenv(key)
-    if val is None or not str(val).strip():
-        return default
-    try:
-        return int(str(val).strip())
-    except (ValueError, TypeError):
-        return default
+    if val is not None and str(val).strip():
+        try:
+            return int(str(val).strip())
+        except (ValueError, TypeError):
+            pass
+    fallback = example_defaults.get(key, str(default))
+    if fallback is not None and str(fallback).strip():
+        try:
+            return int(str(fallback).strip())
+        except (ValueError, TypeError):
+            pass
+    return default
 
 # ==========================================
 # 🔑 CREDENTIALS & REQUIRED SETTINGS
