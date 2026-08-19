@@ -81,8 +81,7 @@ def send_email(subject, html_content):
 
 def main():
     try:
-        if not validate_config(["SENDER_EMAIL", "APP_PASSWORD", "RECEIVER_EMAIL", "GEMINI_API_KEY", "DATABASE_URL"]):
-            return
+        validate_config(["SENDER_EMAIL", "APP_PASSWORD", "RECEIVER_EMAIL", "GEMINI_API_KEY", "DATABASE_URL"])
 
         # 1. Initialize & migrate DB schema
         print("[1/4] Initializing PostgreSQL database tables & checking pending tests...")

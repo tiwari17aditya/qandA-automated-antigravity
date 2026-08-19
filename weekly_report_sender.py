@@ -160,8 +160,7 @@ def send_weekly_email(subject, html_content):
 
 def main():
     try:
-        if not validate_config(["SENDER_EMAIL", "APP_PASSWORD", "RECEIVER_EMAIL", "DATABASE_URL"]):
-            return
+        validate_config(["SENDER_EMAIL", "APP_PASSWORD", "RECEIVER_EMAIL", "GEMINI_API_KEY", "DATABASE_URL"])
 
         print("[1/4] Gathering past 7 days performance metrics from database...")
         init_and_migrate_db()

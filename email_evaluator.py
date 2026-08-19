@@ -59,8 +59,7 @@ def send_feedback_email(date_str, score, total, pct, breakdown_html, weak_analys
 
 def main():
     try:
-        if not validate_config(["SENDER_EMAIL", "APP_PASSWORD", "RECEIVER_EMAIL", "DATABASE_URL"]):
-            return
+        validate_config(["SENDER_EMAIL", "APP_PASSWORD", "RECEIVER_EMAIL", "DATABASE_URL"])
 
         print("[1/3] Initializing DB & checking expired tests...")
         init_and_migrate_db()

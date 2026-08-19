@@ -97,7 +97,7 @@ Return ONLY valid JSON matching this schema:
 def validate_config(required_keys=None):
     """
     Validates that required configuration values are non-empty.
-    Prints an actionable message if any configuration is missing.
+    Raises a ValueError with actionable guidance if any configuration is missing.
     """
     if required_keys is None:
         required_keys = ["SENDER_EMAIL", "APP_PASSWORD", "RECEIVER_EMAIL", "DATABASE_URL"]
@@ -112,9 +112,12 @@ def validate_config(required_keys=None):
 
     missing = [k for k in required_keys if not current_config.get(k)]
     if missing:
-        print("\n[ERROR] Configuration Error: Missing required settings:")
-        for k in missing:
-            print(f"   - {k}")
-        print("\n[TIP] Please edit your `.env` file in the project folder and fill in the missing values.\n")
-        return False
+        error_msg = (
+            f"\n[ERROR] Configuration Error: Missing required settings / GitHub Secrets:\n"
+            + "\n".join([f"   - {k}" for k in missing])
+            + "\n\n[ACTION REQUIRED] Please add these in your GitHub Repo -> Settings -> Secrets and variables -> Actions, or local `.env` file.\n"
+        )
+        print(error_msg, file=sys.stderr)
+        raise ValueError(f"Missing required configuration keys: {', '.join(missing)}")
     return True
+
