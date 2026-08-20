@@ -51,6 +51,11 @@ def send_feedback_email(date_str, score, total, pct, breakdown_html, weak_analys
     msg["Subject"] = subject
     msg["From"] = SENDER_EMAIL
     msg["To"] = RECEIVER_EMAIL
+    msg["X-Priority"] = "3"
+    msg["Importance"] = "Normal"
+    msg["Priority"] = "Normal"
+    msg["Auto-Submitted"] = "auto-generated"
+    msg["Precedence"] = "bulk"
     msg.attach(MIMEText(html, "html"))
 
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=20) as server:
