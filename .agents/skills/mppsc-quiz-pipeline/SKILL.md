@@ -39,5 +39,10 @@ graph TD
    - If `TOPICS` is specified in `.env`, generates `QUESTIONS_PER_TOPIC` questions per topic.
    - If `TOPICS` is blank, generates `TOTAL_QUESTIONS` from the general MPPSC Prelims syllabus (MP GK, Unit 9 ICT, Unit 10 Tribes & Culture, History, Polity, Geography).
 
-4. **Error Handling**:
+4. **Previous Day Solutions & Score Review**:
+   - Before today's questions, `db.get_previous_test_data` fetches the prior drill record.
+   - Embeds yesterday's score badge (Evaluated / Absent / Pending) along with collapsible question-by-question solutions, candidate answer comparisons, correct options, and concise explanations.
+
+5. **Error Handling**:
    - All failures trigger `send_error_alert` with stack trace sent to the user's email.
+

@@ -95,3 +95,51 @@ def mark_expired_tests_absent():
     cursor.close()
     conn.close()
     return absent_count
+
+def get_previous_test_data(current_date=None):
+    """
+    Retrieves the most recent prior test record from daily_tests
+    (i.e., test_date < current_date or CURRENT_DATE).
+    Returns dict or None.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    if current_date:
+        cursor.execute("""
+            SELECT test_date, topics, status, score, total_questions, 
+                   percentage, questions_json, user_answers_json, breakdown_json
+            FROM daily_tests
+            WHERE test_date < %s
+            ORDER BY test_date DESC
+            LIMIT 1;
+        """, (current_date,))
+    else:
+        cursor.execute("""
+            SELECT test_date, topics, status, score, total_questions, 
+                   percentage, questions_json, user_answers_json, breakdown_json
+            FROM daily_tests
+            WHERE test_date < CURRENT_DATE
+            ORDER BY test_date DESC
+            LIMIT 1;
+        """)
+    
+    row = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    
+    if not row:
+        return None
+        
+    return {
+        "test_date": str(row[0]),
+        "topics": row[1] or "General Mix",
+        "status": row[2] or "UNKNOWN",
+        "score": row[3] or 0,
+        "total_questions": row[4] or 15,
+        "percentage": row[5] or 0.0,
+        "questions": row[6] or [],
+        "user_answers": row[7] or [],
+        "breakdown": row[8] or [],
+    }
+
