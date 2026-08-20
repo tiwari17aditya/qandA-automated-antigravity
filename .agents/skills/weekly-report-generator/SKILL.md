@@ -21,10 +21,12 @@ Runs on a weekly cycle (typically Sunday evening) to analyze the candidate's dri
 
 ## Report Dashboard Sections
 
-- **KPI Cards**: Color-coded Attendance, Overall Accuracy, and Missed Drills count.
+- **7-Day Streak & Daily Progress Bar**: Visual daily activity badges showing completion status and scores (`✅ 13/15 (87%)`, `❌ Absent`, `⏳ Pending`).
+- **KPI Cards**: Color-coded Attendance %, Overall Accuracy %, and Missed Drills count.
 - **AI Mentor Study Review & Strategy**:
-  - Weekly Performance Verdict
-  - High-Priority Revision Areas
+  - Weekly Performance Verdict (evaluating drill consistency, streak, and score progression)
+  - High-Priority Revision Areas (addressing weak topics < 70%)
   - Strategic Advice for Next Week
-- **Day-by-Day Activity Table**: Date, topic focus, completion status, score.
-- **Topic Mastery Table**: Cumulative topic attempts, correct answers, and mastery level badges.
+- **Day-by-Day Activity & Scores Table**: Date, topic focus, completion status, exact score / percentage.
+- **Topic Mastery Table**: Cumulative topic attempts, correct answers, and mastery level badges (`🟢 Strong`, `🟡 Moderate`, `🔴 Needs Focus`).
+

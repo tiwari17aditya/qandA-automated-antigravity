@@ -16,25 +16,27 @@ from config import (
 from db import get_db_connection, init_and_migrate_db, mark_expired_tests_absent
 from alert_utils import send_error_alert, generate_ai_completion
 
-def generate_ai_study_recommendation(summary_data, weak_topics):
+def generate_ai_study_recommendation(summary_data, weak_topics, daily_scores_str=""):
     """
     Generates a personalized MPPSC Prelims study strategy
-    based on the student's weekly accuracy and weak topics using AI fallback chain.
+    based on the student's weekly accuracy, daily consistency, and weak topics using AI fallback chain.
     """
     weak_str = ", ".join([f"{t['topic']} ({t['accuracy']:.0f}%)" for t in weak_topics]) if weak_topics else "None (Keep maintaining high performance!)"
     
     prompt = f"""
     You are an expert MPPSC State Services mentor.
     Review the student's weekly prelims drill performance:
-    - Tests Attempted: {summary_data['tests_completed']} / {summary_data['tests_assigned']}
+    - Tests Attempted: {summary_data['tests_completed']} / {summary_data['tests_assigned']} ({summary_data['att_rate']:.0f}% Attendance)
     - Tests Absent: {summary_data['tests_absent']}
     - Overall Weekly Score: {summary_data['total_score']} / {summary_data['total_possible']} ({summary_data['overall_pct']:.1f}%)
-    - Weak Topics Identified: {weak_str}
+    - Best Scoring Day: {summary_data.get('best_day', 'N/A')}
+    - Daily Score Progression: {daily_scores_str or 'N/A'}
+    - Weak Topics Identified (<70% accuracy): {weak_str}
 
     Provide a concise, motivating, and actionable study action plan for the coming week in 3 short sections:
-    1. 🎯 Weekly Performance Verdict (2-3 sentences)
-    2. 🚨 High-Priority Revision Areas (Bullet points targeting weak units/topics)
-    3. 💡 Strategic Advice for Next Week's Drills (2 actionable tips)
+    1. 🎯 Weekly Performance Verdict (2-3 sentences assessing drill consistency and score trend)
+    2. 🚨 High-Priority Revision Areas (Targeting identified weak topics with specific MPPSC Prelims tips)
+    3. 💡 Strategic Advice for Next Week's Drills (2 actionable daily drill habits)
 
     Keep tone encouraging, rigorous, and direct. Format with clean HTML bullet points.
     """
@@ -45,6 +47,46 @@ def generate_ai_study_recommendation(summary_data, weak_topics):
 def build_weekly_html(start_date, end_date, summary_data, daily_rows, topic_rows, ai_advice_html):
     att_color = "#38a169" if summary_data['att_rate'] >= 80 else "#d69e2e" if summary_data['att_rate'] >= 60 else "#e53e3e"
     score_color = "#38a169" if summary_data['overall_pct'] >= 75 else "#d69e2e" if summary_data['overall_pct'] >= 50 else "#e53e3e"
+
+    # Visual 7-day streak bar
+    streak_cards_html = ""
+    for row in daily_rows:
+        t_date, topic_desc, status, score, total_q, pct = row
+        try:
+            d_obj = datetime.strptime(str(t_date), "%Y-%m-%d")
+            day_name = d_obj.strftime("%a")
+            date_short = d_obj.strftime("%d %b")
+        except Exception:
+            day_name = "Day"
+            date_short = str(t_date)
+
+        if status == 'EVALUATED':
+            bg_color = "#f0fff4"
+            border_color = "#9ae6b4"
+            text_color = "#22543d"
+            badge_icon = f"✅ {score}/{total_q}"
+            sub_text = f"{pct:.0f}%"
+        elif status == 'ABSENT':
+            bg_color = "#fff5f5"
+            border_color = "#feb2b2"
+            text_color = "#9b2c2c"
+            badge_icon = "❌ Absent"
+            sub_text = "0%"
+        else:
+            bg_color = "#fffaf0"
+            border_color = "#fbd38d"
+            text_color = "#7b341e"
+            badge_icon = "⏳ Pending"
+            sub_text = "-"
+
+        streak_cards_html += f"""
+        <div style="flex: 1; min-width: 75px; background: {bg_color}; border: 1px solid {border_color}; padding: 8px 4px; border-radius: 6px; text-align: center;">
+            <div style="font-size: 11px; font-weight: bold; color: #4a5568;">{day_name}</div>
+            <div style="font-size: 10px; color: #718096; margin-bottom: 4px;">{date_short}</div>
+            <div style="font-size: 12px; font-weight: bold; color: {text_color};">{badge_icon}</div>
+            <div style="font-size: 10px; color: {text_color};">{sub_text}</div>
+        </div>
+        """
 
     daily_table_rows = ""
     for row in daily_rows:
@@ -57,7 +99,7 @@ def build_weekly_html(start_date, end_date, summary_data, daily_rows, topic_rows
         score_display = f"{score}/{total_q} ({pct:.0f}%)" if status == 'EVALUATED' else "0" if status == 'ABSENT' else "-"
         daily_table_rows += f"""
         <tr style="border-bottom: 1px solid #edf2f7;">
-            <td style="padding: 8px;">{t_date}</td>
+            <td style="padding: 8px; font-weight: 500;">{t_date}</td>
             <td style="padding: 8px;">{topic_desc or 'General Mix'}</td>
             <td style="padding: 8px; text-align: center;">{status_badge}</td>
             <td style="padding: 8px; text-align: center; font-weight: 600;">{score_display}</td>
@@ -70,7 +112,7 @@ def build_weekly_html(start_date, end_date, summary_data, daily_rows, topic_rows
         tag_text = "🔴 Needs Focus" if acc < 60 else "🟡 Moderate" if acc < 80 else "🟢 Strong"
         topic_table_rows += f"""
         <tr style="border-bottom: 1px solid #edf2f7;">
-            <td style="padding: 8px;">{topic}</td>
+            <td style="padding: 8px; font-weight: 500;">{topic}</td>
             <td style="padding: 8px; text-align: center;">{cor}/{att} ({acc:.0f}%)</td>
             <td style="padding: 8px; text-align: center; color: {tag_color}; font-weight: bold;">{tag_text}</td>
         </tr>
@@ -83,6 +125,14 @@ def build_weekly_html(start_date, end_date, summary_data, daily_rows, topic_rows
             <div style="border-bottom: 2px solid #3182ce; padding-bottom: 12px; margin-bottom: 20px;">
                 <h2 style="color: #2b6cb0; margin: 0;">📈 MPPSC Weekly Progress Report</h2>
                 <p style="color: #718096; margin: 5px 0 0 0;">Week Range: {start_date} to {end_date}</p>
+            </div>
+
+            <!-- 7-Day Streak Bar -->
+            <div style="margin-bottom: 20px;">
+                <div style="font-size: 13px; font-weight: bold; color: #4a5568; margin-bottom: 8px;">🗓️ Daily Drill Score & Attendance Streak:</div>
+                <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                    {streak_cards_html}
+                </div>
             </div>
 
             <!-- KPI Cards -->
@@ -113,7 +163,7 @@ def build_weekly_html(start_date, end_date, summary_data, daily_rows, topic_rows
             </div>
 
             <!-- Daily Activity Table -->
-            <h3 style="color: #2d3748; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; margin-bottom: 10px;">📅 Day-by-Day Activity</h3>
+            <h3 style="color: #2d3748; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; margin-bottom: 10px;">📅 Day-by-Day Activity & Scores</h3>
             <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 25px;">
                 <tr style="background: #f7fafc; text-align: left;">
                     <th style="padding: 8px;">Date</th>
@@ -191,6 +241,24 @@ def main():
         overall_pct = (total_score / total_possible) * 100.0 if total_possible > 0 else 0.0
         att_rate = (tests_completed / tests_assigned) * 100.0 if tests_assigned > 0 else 0.0
 
+        # Calculate best scoring day and score progression string
+        best_day = "N/A"
+        max_pct = -1.0
+        daily_scores_list = []
+        for r in daily_rows:
+            t_date, topic_desc, status, score, total_q, pct = r
+            if status == 'EVALUATED':
+                daily_scores_list.append(f"{t_date}: {score}/{total_q} ({pct:.0f}%)")
+                if pct > max_pct:
+                    max_pct = pct
+                    best_day = f"{t_date} ({score}/{total_q} - {pct:.0f}%)"
+            elif status == 'ABSENT':
+                daily_scores_list.append(f"{t_date}: Absent (0/{total_q})")
+            else:
+                daily_scores_list.append(f"{t_date}: Pending")
+
+        daily_scores_str = ", ".join(daily_scores_list)
+
         summary_data = {
             "tests_assigned": tests_assigned,
             "tests_completed": tests_completed,
@@ -198,7 +266,9 @@ def main():
             "total_score": total_score,
             "total_possible": total_possible,
             "overall_pct": overall_pct,
-            "att_rate": att_rate
+            "att_rate": att_rate,
+            "best_day": best_day,
+            "daily_scores_str": daily_scores_str,
         }
 
         # Fetch topic stats
@@ -208,7 +278,7 @@ def main():
 
         # Generate AI Study Strategy
         print("[2/4] Generating AI study review with Gemini...")
-        ai_advice = generate_ai_study_recommendation(summary_data, weak_topics)
+        ai_advice = generate_ai_study_recommendation(summary_data, weak_topics, daily_scores_str=daily_scores_str)
 
         # Save to weekly_reports table
         week_id = f"WEEK_{start_date.strftime('%Y_%m_%d')}_TO_{end_date.strftime('%Y_%m_%d')}"
@@ -247,3 +317,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
