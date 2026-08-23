@@ -3,6 +3,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 import io
+import time
 import smtplib
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
