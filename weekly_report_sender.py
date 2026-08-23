@@ -220,8 +220,9 @@ def main():
         cursor = conn.cursor()
 
         today = datetime.now().date()
-        start_date = today - timedelta(days=7)
-        end_date = today
+        # Weekly report runs on Sunday: window covers 7 full days from previous Sunday to Saturday
+        end_date = today - timedelta(days=1)
+        start_date = end_date - timedelta(days=6)
 
         # Fetch daily tests from past 7 days
         cursor.execute("""

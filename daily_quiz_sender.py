@@ -1,9 +1,16 @@
+import io
 import json
+import time
 import smtplib
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from google import genai
+from email.mime.application import MIMEApplication
+
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.colors import HexColor
 
 from config import (
     SENDER_EMAIL,
@@ -17,7 +24,7 @@ from config import (
     get_quiz_prompt,
     validate_config,
 )
-from db import get_db_connection, init_and_migrate_db, mark_expired_tests_absent, get_previous_test_data
+from db import get_db_connection, init_and_migrate_db, mark_expired_tests_absent
 from alert_utils import send_error_alert, generate_ai_completion, clean_ai_json_output
 
 def generate_questions():
@@ -34,173 +41,160 @@ def generate_questions():
     print(f"      Generated {len(questions)} questions successfully.")
     return questions
 
-def render_previous_day_section(prev_test):
-    """
-    Renders yesterday's / prior drill score and card-based solution breakdown
-    with clear green tick and red cross markers for right/wrong ticked options.
-    """
-    if not prev_test or not prev_test.get("questions"):
-        return ""
+def build_quiz_pdf_bytes(date_str, topic_desc, questions):
+    """Generates a clean PDF document containing Daily Quiz questions."""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=36,
+        leftMargin=36,
+        topMargin=36,
+        bottomMargin=36
+    )
+
+    styles = getSampleStyleSheet()
     
-    p_date = prev_test.get("test_date", "")
-    p_status = prev_test.get("status", "UNKNOWN")
-    p_score = prev_test.get("score", 0)
-    p_total = prev_test.get("total_questions") or len(prev_test.get("questions", []))
-    p_pct = prev_test.get("percentage", 0.0)
-    p_questions = prev_test.get("questions", [])
-    p_user_answers = prev_test.get("user_answers") or []
-    p_topics = prev_test.get("topics", "General Mix")
+    title_style = ParagraphStyle(
+        'DocTitle',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=18,
+        leading=22,
+        textColor=HexColor('#2B6CB0'),
+        spaceAfter=4
+    )
+    subtitle_style = ParagraphStyle(
+        'DocSubTitle',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=10,
+        leading=14,
+        textColor=HexColor('#4A5568'),
+        spaceAfter=12
+    )
+    instruction_style = ParagraphStyle(
+        'InstructionText',
+        parent=styles['Normal'],
+        fontName='Helvetica-Oblique',
+        fontSize=9.5,
+        leading=13,
+        textColor=HexColor('#2C5282')
+    )
+    q_header_style = ParagraphStyle(
+        'QHeader',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=10,
+        leading=13,
+        textColor=HexColor('#2B6CB0')
+    )
+    q_text_style = ParagraphStyle(
+        'QText',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=10.5,
+        leading=14,
+        textColor=HexColor('#1A202C'),
+        spaceAfter=6
+    )
+    opt_style = ParagraphStyle(
+        'OptText',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=9.5,
+        leading=13,
+        textColor=HexColor('#2D3748')
+    )
 
-    correct_count = 0
-    wrong_count = 0
-    unattempted_count = 0
+    elements = []
 
-    solutions_cards_html = ""
-    for idx, q in enumerate(p_questions):
-        q_num = q.get("q_num", idx + 1)
-        topic = q.get("topic", "General")
-        q_text = q.get("question", "")
-        options = q.get("options", {})
-        correct_opt = str(q.get("correct_option", "")).upper()
-        explanation = q.get("explanation", "")
-        
-        user_ans = (p_user_answers[idx] if idx < len(p_user_answers) else None) if p_user_answers else None
-        
-        if p_status == "EVALUATED" and user_ans:
-            is_correct = (str(user_ans).upper() == correct_opt)
-            if is_correct:
-                correct_count += 1
-                card_border = "#38a169"
-                card_bg = "#f0fff4"
-                user_badge = f"""<span style="background: #c6f6d5; color: #22543d; padding: 3px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">✅ Correct (Your Answer: {user_ans})</span>"""
-            else:
-                wrong_count += 1
-                card_border = "#e53e3e"
-                card_bg = "#fff5f5"
-                user_badge = f"""<span style="background: #fed7d7; color: #742a2a; padding: 3px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">❌ Incorrect (Your Answer: {user_ans} &bull; Correct: {correct_opt})</span>"""
-        elif p_status == "ABSENT":
-            unattempted_count += 1
-            card_border = "#cbd5e0"
-            card_bg = "#fafafa"
-            user_badge = f"""<span style="background: #edf2f7; color: #4a5568; padding: 3px 8px; border-radius: 4px; font-style: italic; font-size: 11px;">⚪ Unattempted / Absent (Correct: {correct_opt})</span>"""
-        else:
-            unattempted_count += 1
-            card_border = "#e2e8f0"
-            card_bg = "#ffffff"
-            user_badge = f"""<span style="background: #edf2f7; color: #4a5568; padding: 3px 8px; border-radius: 4px; font-size: 11px;">⏳ Pending Eval (Correct: {correct_opt})</span>"""
+    # Title & Header
+    elements.append(Paragraph(f"🎯 MPPSC Daily Prelims Drill - {date_str}", title_style))
+    elements.append(Paragraph(f"Focus: {topic_desc} &bull; Total Questions: {len(questions)}", subtitle_style))
+    
+    # Submission Tip Banner
+    banner_data = [[
+        Paragraph("📌 <b>Submission Format:</b> Reply directly to the quiz email with your answers (e.g. <code>1A 2C 3B...</code> or <code>ABCD...</code>) before midnight for evaluation.", instruction_style)
+    ]]
+    banner_table = Table(banner_data, colWidths=[520])
+    banner_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), HexColor('#EBF8FF')),
+        ('BOX', (0, 0), (-1, -1), 1, HexColor('#3182CE')),
+        ('PADDING', (0, 0), (-1, -1), 8),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+    elements.append(banner_table)
+    elements.append(Spacer(1, 15))
 
-        correct_opt_text = options.get(correct_opt, "") if isinstance(options, dict) else ""
-
-        solutions_cards_html += f"""
-        <div style="border-left: 4px solid {card_border}; background: {card_bg}; padding: 12px 14px; margin-bottom: 12px; border-radius: 6px; border: 1px solid #e2e8f0; border-left-width: 4px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                <span style="font-size: 11px; font-weight: bold; color: #4a5568; text-transform: uppercase;">Q{q_num} &bull; {topic}</span>
-                {user_badge}
-            </div>
-            <div style="font-size: 14px; font-weight: 600; color: #2d3748; margin-bottom: 6px; line-height: 1.4;">
-                {q_text}
-            </div>
-            <div style="font-size: 13px; color: #2d3748; line-height: 1.4; margin-bottom: 4px;">
-                <strong style="color: #2b6cb0;">Correct Answer: ({correct_opt})</strong> {correct_opt_text}
-            </div>
-            {f'<div style="font-size: 12px; color: #4a5568; margin-top: 4px; background: rgba(0,0,0,0.03); padding: 6px 8px; border-radius: 4px;">💡 <em>{explanation}</em></div>' if explanation else ''}
-        </div>
-        """
-
-    if p_status == "EVALUATED":
-        badge_bg = "#c6f6d5" if p_pct >= 75 else "#fefcbf" if p_pct >= 50 else "#fed7d7"
-        badge_color = "#22543d" if p_pct >= 75 else "#744210" if p_pct >= 50 else "#742a2a"
-        status_banner = f"""
-        <div style="background: {badge_bg}; color: {badge_color}; padding: 10px 14px; border-radius: 6px; font-weight: bold; font-size: 14px; margin-bottom: 15px;">
-            🎯 Yesterday's Score: {p_score}/{p_total} ({p_pct:.1f}%) &bull; {correct_count} Correct ✅ &bull; {wrong_count} Incorrect ❌
-        </div>
-        """
-    elif p_status == "ABSENT":
-        status_banner = f"""
-        <div style="background: #fed7d7; color: #742a2a; padding: 10px 14px; border-radius: 6px; font-weight: bold; font-size: 14px; margin-bottom: 15px;">
-            ❌ Marked Absent (0/{p_total} unsubmitted)
-        </div>
-        """
-    else:
-        status_banner = f"""
-        <div style="background: #edf2f7; color: #4a5568; padding: 10px 14px; border-radius: 6px; font-weight: bold; font-size: 14px; margin-bottom: 15px;">
-            ⏳ Status: Pending Evaluation
-        </div>
-        """
-
-    return f"""
-    <!-- 3-LINE VERTICAL SEPARATOR -->
-    <div style="margin: 35px 0 25px 0; text-align: center;">
-        <hr style="border: none; border-top: 2px solid #cbd5e0; margin: 4px 0;">
-        <hr style="border: none; border-top: 1px dashed #a0aec0; margin: 4px 0;">
-        <hr style="border: none; border-top: 2px solid #cbd5e0; margin: 4px 0;">
-    </div>
-
-    <!-- PREVIOUS DAY REVIEW SECTION (PLACED AFTER TODAY'S QUESTIONS) -->
-    <div style="background: #f8fafc; border: 1px solid #cbd5e0; border-radius: 8px; padding: 18px; margin-top: 15px;">
-        <div style="border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 14px;">
-            <h3 style="color: #2b6cb0; margin: 0; font-size: 16px;">⏮️ Previous Day Drill Solutions & Review ({p_date})</h3>
-            <p style="color: #718096; margin: 3px 0 0 0; font-size: 12px;">Focus: {p_topics}</p>
-        </div>
-        {status_banner}
-        <details>
-            <summary style="cursor: pointer; font-weight: bold; color: #3182ce; font-size: 13px; padding: 6px 0;">
-                🔍 View Solutions & Explanations ({len(p_questions)} Cards)
-            </summary>
-            <div style="margin-top: 14px;">
-                {solutions_cards_html}
-            </div>
-        </details>
-    </div>
-    """
-
-def create_html_email(date_str, questions, topic_desc, prev_test=None):
-    prev_review_html = render_previous_day_section(prev_test) if prev_test else ""
-
-    # 1. Today's drill header and questions
-    questions_cards_html = ""
+    # Questions Loop
     for q in questions:
-        questions_cards_html += f"""
-            <div style="border: 1px solid #edf2f7; border-radius: 6px; padding: 14px; margin-bottom: 14px; background: #fafafa;">
-                <div style="font-size: 11px; font-weight: bold; color: #4a5568; text-transform: uppercase; margin-bottom: 4px;">Q{q['q_num']} &bull; {q['topic']}</div>
-                <div style="font-size: 15px; font-weight: 600; margin-bottom: 8px; color: #1a202c;">{q['question']}</div>
-                <div style="font-size: 14px; line-height: 1.6;">
-                    (A) {q['options']['A']}<br>
-                    (B) {q['options']['B']}<br>
-                    (C) {q['options']['C']}<br>
-                    (D) {q['options']['D']}
-                </div>
-            </div>
-        """
+        q_num = q.get('q_num', 1)
+        topic = q.get('topic', 'General')
+        q_text = q.get('question', '')
+        options = q.get('options', {})
 
+        q_elements = [
+            Paragraph(f"Q{q_num}. [{topic}]", q_header_style),
+            Spacer(1, 3),
+            Paragraph(q_text, q_text_style),
+            Spacer(1, 4)
+        ]
+
+        opt_rows = []
+        for opt_key in ['A', 'B', 'C', 'D']:
+            opt_val = options.get(opt_key, '')
+            opt_rows.append([Paragraph(f"<b>({opt_key})</b> {opt_val}", opt_style)])
+
+        opt_table = Table(opt_rows, colWidths=[500])
+        opt_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), HexColor('#FAFAFA')),
+            ('BOX', (0, 0), (-1, -1), 0.5, HexColor('#E2E8F0')),
+            ('INNERGRID', (0, 0), (-1, -1), 0.5, HexColor('#EDF2F7')),
+            ('PADDING', (0, 0), (-1, -1), 5),
+        ]))
+        q_elements.append(opt_table)
+
+        card_table = Table([[q_elements]], colWidths=[520])
+        card_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), HexColor('#FFFFFF')),
+            ('BOX', (0, 0), (-1, -1), 1, HexColor('#CBD5E0')),
+            ('PADDING', (0, 0), (-1, -1), 10),
+        ]))
+        elements.append(card_table)
+        elements.append(Spacer(1, 12))
+
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+def create_html_email(date_str, questions, topic_desc):
+    filename = f"MPPSC_Daily_Drill_{date_str}.pdf"
     html = f"""
     <html>
     <body style="font-family: Arial, sans-serif; background-color: #f7fafc; padding: 20px; color: #2d3748;">
-        <div style="max-width: 650px; margin: 0 auto; background: #fff; padding: 25px; border-radius: 8px; border: 1px solid #e2e8f0;">
+        <div style="max-width: 600px; margin: 0 auto; background: #fff; padding: 25px; border-radius: 8px; border: 1px solid #e2e8f0;">
             <div style="border-bottom: 2px solid #3182ce; padding-bottom: 10px; margin-bottom: 20px;">
                 <h2 style="color: #2b6cb0; margin: 0;">🎯 MPPSC Daily Prelims Drill</h2>
                 <p style="color: #718096; margin: 5px 0 0 0;">Date: {date_str} &bull; {len(questions)} Questions &bull; Focus: {topic_desc}</p>
             </div>
 
-            <div style="background-color: #ebf8ff; border-left: 4px solid #3182ce; padding: 12px; margin-bottom: 20px; font-size: 14px;">
-                <strong>📌 Today's Drill Submission:</strong> Click <strong>Reply</strong> to this email, type your answers in any format (e.g. <code>1A 2C 3B...</code> or <code>CBBBBC...</code> or <code>&lt;Topic&gt; ABCD...</code>), and send!
+            <div style="background-color: #ebf8ff; border-left: 4px solid #3182ce; padding: 14px; margin-bottom: 20px; font-size: 14px; line-height: 1.5;">
+                <strong>📎 Downloadable Quiz PDF Attached!</strong><br>
+                Please open the attached <code>{filename}</code> document to view today's complete set of drill questions and options.
+                <br><br>
+                <strong>📌 Submission Instructions:</strong> Click <strong>Reply</strong> to this email, type your answers in any format (e.g. <code>1A 2C 3B...</code> or <code>CBBBBC...</code> or <code>&lt;Topic&gt; ABCD...</code>), and send!
                 <br><small style="color: #4a5568;">⏰ Please submit before midnight for automated evaluation.</small>
             </div>
-
-            <!-- TODAY'S QUESTIONS -->
-            {questions_cards_html}
-
-            <!-- PREVIOUS DAY REVIEW (PLACED AFTER TODAY'S QUESTIONS) -->
-            {prev_review_html}
         </div>
     </body>
     </html>
     """
     return html
 
-def send_email(subject, html_content):
+def send_email(subject, html_content, pdf_bytes, filename):
     print(f"[4/4] Sending quiz email to {RECEIVER_EMAIL}...")
-    msg = MIMEMultipart("alternative")
+    msg = MIMEMultipart()
     msg["Subject"] = subject
     msg["From"] = SENDER_EMAIL
     msg["To"] = RECEIVER_EMAIL
@@ -209,12 +203,28 @@ def send_email(subject, html_content):
     msg["Priority"] = "Normal"
     msg["Auto-Submitted"] = "auto-generated"
     msg["Precedence"] = "bulk"
+
     msg.attach(MIMEText(html_content, "html"))
 
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=20) as server:
-        server.login(SENDER_EMAIL, APP_PASSWORD)
-        server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
-    print("      Email sent successfully!")
+    if pdf_bytes:
+        pdf_attachment = MIMEApplication(pdf_bytes, _subtype="pdf")
+        pdf_attachment.add_header("Content-Disposition", "attachment", filename=filename)
+        msg.attach(pdf_attachment)
+
+    # Retry logic for SMTP SSL connection
+    max_retries = 3
+    for attempt in range(1, max_retries + 1):
+        try:
+            with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as server:
+                server.login(SENDER_EMAIL, APP_PASSWORD)
+                server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
+            print("      Email sent successfully!")
+            return
+        except Exception as smtp_err:
+            print(f"      [WARN] SMTP Attempt {attempt}/{max_retries} failed: {smtp_err}")
+            if attempt == max_retries:
+                raise smtp_err
+            time.sleep(3)
 
 def main():
     try:
@@ -231,15 +241,14 @@ def main():
         test_id = f"MPPSC_{today_str}"
         topic_desc = TOPICS if TOPICS else "General MPPSC Mix"
 
-        # Fetch previous day's test for solutions & score review
-        prev_test = get_previous_test_data(today_str)
-        if prev_test:
-            print(f"      Loaded previous drill solutions from {prev_test['test_date']} (Status: {prev_test['status']}).")
-
         # 2. Generate questions via Gemini
         questions = generate_questions()
 
-        # 3. Save to database
+        # 3. Build PDF document
+        pdf_filename = f"MPPSC_Daily_Drill_{today_str}.pdf"
+        pdf_bytes = build_quiz_pdf_bytes(today_str, topic_desc, questions)
+
+        # 4. Save to database
         print("[3/4] Saving questions to database...")
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -257,9 +266,10 @@ def main():
         conn.close()
         print("      Saved to daily_tests table as PENDING.")
 
-        # 4. Dispatch Email
+        # 5. Dispatch Email
         subject = f"🎯 MPPSC Daily Prelims Drill - {today_str}"
-        send_email(subject, create_html_email(today_str, questions, topic_desc, prev_test=prev_test))
+        html_body = create_html_email(today_str, questions, topic_desc)
+        send_email(subject, html_body, pdf_bytes, pdf_filename)
         print(f"\n[OK] MPPSC Daily Quiz for {today_str} sent and recorded successfully!\n")
 
     except Exception as e:
