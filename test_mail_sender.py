@@ -401,9 +401,90 @@ def send_test_daily_quiz():
     pdf_attachment.add_header("Content-Disposition", "attachment", filename=f"MPPSC_Daily_Drill_{today_str}.pdf")
     msg.attach(pdf_attachment)
 
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=20) as server:
-        server.login(SENDER_EMAIL, APP_PASSWORD)
-        server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
+def send_with_retry(msg):
+    max_retries = 3
+    for attempt in range(1, max_retries + 1):
+        try:
+            with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as server:
+                server.login(SENDER_EMAIL, APP_PASSWORD)
+                server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
+            return True
+        except Exception as err:
+            print(f"         [WARN] SMTP Attempt {attempt}/{max_retries} failed: {err}")
+            if attempt == max_retries:
+                raise err
+            time.sleep(2)
+
+def send_test_daily_quiz():
+    """Sends a sample Daily Quiz email with PDF attached."""
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    sample_questions = [
+        {
+            "q_num": 1,
+            "topic": "Ancient History",
+            "question": "Which Harappan site has provided evidence of a dockyard?",
+            "options": {
+                "A": "Kalibangan",
+                "B": "Lothal",
+                "C": "Mohenjo-daro",
+                "D": "Surkotada"
+            },
+            "correct_option": "B",
+            "explanation": "Lothal in Gujarat had a tidal dockyard, proving active maritime trade during the Indus Valley civilization."
+        },
+        {
+            "q_num": 2,
+            "topic": "MP Geography",
+            "question": "The highest peak of Madhya Pradesh, Dhupgarh, is located in which mountain range?",
+            "options": {
+                "A": "Vindhya Range",
+                "B": "Satpura Range",
+                "C": "Kaimur Range",
+                "D": "Maikal Range"
+            },
+            "correct_option": "B",
+            "explanation": "Mount Dhupgarh (1,350 m) in Pachmarhi is the highest point of MP, situated in the Mahadeo Hills of the Satpura Range."
+        }
+    ]
+
+    print("[TEST 1/3] Generating Daily Quiz PDF & sending test email...")
+    pdf_bytes = build_quiz_pdf_bytes(today_str, "History & MP Geography", sample_questions)
+
+    html_body = f"""
+    <html>
+    <body style="font-family: Arial, sans-serif; background-color: #f7fafc; padding: 20px; color: #2d3748;">
+        <div style="max-width: 600px; margin: 0 auto; background: #fff; padding: 25px; border-radius: 8px; border: 1px solid #e2e8f0;">
+            <div style="border-bottom: 2px solid #3182ce; padding-bottom: 10px; margin-bottom: 15px;">
+                <h2 style="color: #2b6cb0; margin: 0;">🎯 [TEST] MPPSC Daily Prelims Drill</h2>
+                <p style="color: #718096; margin: 5px 0 0 0;">Date: {today_str} &bull; 2 Questions &bull; Focus: History & MP Geography</p>
+            </div>
+
+            <div style="background-color: #ebf8ff; border-left: 4px solid #3182ce; padding: 12px; margin-bottom: 20px; font-size: 14px;">
+                <strong>📎 Downloadable Quiz PDF Attached!</strong><br>
+                Please open the attached <code>MPPSC_Daily_Drill_{today_str}.pdf</code> document to read today's drill questions.
+                <br><br>
+                <strong>📌 To Submit:</strong> Reply directly to this email with your answers (e.g. <code>1B 2B</code> or <code>BB</code>).
+            </div>
+            
+            <p style="font-size: 12px; color: #718096; text-align: center; margin-top: 20px;">
+                This is a non-recording test email for layout verification.
+            </p>
+        </div>
+    </body>
+    </html>
+    """
+
+    msg = MIMEMultipart()
+    msg["Subject"] = f"🎯 [TEST] MPPSC Daily Prelims Drill - {today_str}"
+    msg["From"] = SENDER_EMAIL
+    msg["To"] = RECEIVER_EMAIL
+    msg.attach(MIMEText(html_body, "html"))
+
+    pdf_attachment = MIMEApplication(pdf_bytes, _subtype="pdf")
+    pdf_attachment.add_header("Content-Disposition", "attachment", filename=f"MPPSC_Daily_Drill_{today_str}.pdf")
+    msg.attach(pdf_attachment)
+
+    send_with_retry(msg)
     print("         ✅ Test 1 (Daily Quiz PDF Email) sent successfully!")
 
 def send_test_evaluation():
@@ -485,9 +566,7 @@ def send_test_evaluation():
     pdf_attachment.add_header("Content-Disposition", "attachment", filename=f"MPPSC_Evaluation_Report_{today_str}.pdf")
     msg.attach(pdf_attachment)
 
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=20) as server:
-        server.login(SENDER_EMAIL, APP_PASSWORD)
-        server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
+    send_with_retry(msg)
     print("         ✅ Test 2 (Evaluation PDF Email) sent successfully!")
 
 def send_test_absent():
@@ -529,16 +608,16 @@ def send_test_absent():
     msg["To"] = RECEIVER_EMAIL
     msg.attach(MIMEText(html_body, "html"))
 
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=20) as server:
-        server.login(SENDER_EMAIL, APP_PASSWORD)
-        server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
+    send_with_retry(msg)
     print("         ✅ Test 3 (Absent Notice Email) sent successfully!")
 
 def main():
     validate_config(["SENDER_EMAIL", "APP_PASSWORD", "RECEIVER_EMAIL"])
     print(f"🚀 Dispatching 3 test email scenarios to {RECEIVER_EMAIL}...\n")
     send_test_daily_quiz()
+    time.sleep(2)
     send_test_evaluation()
+    time.sleep(2)
     send_test_absent()
     print("\n🎉 All 3 test emails sent successfully! Please check your Gmail inbox.\n")
 

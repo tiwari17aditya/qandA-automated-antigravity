@@ -345,11 +345,6 @@ def send_feedback_email(date_str, score, total, pct, weak_analysis_html, breakdo
     msg = MIMEMultipart()
     msg["From"] = SENDER_EMAIL
     msg["To"] = RECEIVER_EMAIL
-    msg["X-Priority"] = "3"
-    msg["Importance"] = "Normal"
-    msg["Priority"] = "Normal"
-    msg["Auto-Submitted"] = "auto-generated"
-    msg["Precedence"] = "bulk"
 
     if is_absent:
         subject = f"❌ Absent Notice - MPPSC Drill ({date_str})"

@@ -198,11 +198,6 @@ def send_email(subject, html_content, pdf_bytes, filename):
     msg["Subject"] = subject
     msg["From"] = SENDER_EMAIL
     msg["To"] = RECEIVER_EMAIL
-    msg["X-Priority"] = "3"
-    msg["Importance"] = "Normal"
-    msg["Priority"] = "Normal"
-    msg["Auto-Submitted"] = "auto-generated"
-    msg["Precedence"] = "bulk"
 
     msg.attach(MIMEText(html_content, "html"))
 
