@@ -410,7 +410,8 @@ def send_feedback_email(date_str, score, total, pct, weak_analysis_html, breakdo
     max_retries = 3
     for attempt in range(1, max_retries + 1):
         try:
-            with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as server:
+            with smtplib.SMTP("smtp.gmail.com", 587, timeout=30) as server:
+                server.starttls()
                 server.login(SENDER_EMAIL, APP_PASSWORD)
                 server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
             print(f"      Feedback email sent successfully for {date_str}!")

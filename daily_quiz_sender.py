@@ -206,11 +206,12 @@ def send_email(subject, html_content, pdf_bytes, filename):
         pdf_attachment.add_header("Content-Disposition", "attachment", filename=filename)
         msg.attach(pdf_attachment)
 
-    # Retry logic for SMTP SSL connection
+    # Retry logic for SMTP STARTTLS connection
     max_retries = 3
     for attempt in range(1, max_retries + 1):
         try:
-            with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as server:
+            with smtplib.SMTP("smtp.gmail.com", 587, timeout=30) as server:
+                server.starttls()
                 server.login(SENDER_EMAIL, APP_PASSWORD)
                 server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
             print("      Email sent successfully!")

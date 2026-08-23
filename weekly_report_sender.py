@@ -198,7 +198,8 @@ def send_weekly_email(subject, html_content):
     msg["To"] = RECEIVER_EMAIL
     msg.attach(MIMEText(html_content, "html"))
 
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=25) as server:
+    with smtplib.SMTP("smtp.gmail.com", 587, timeout=30) as server:
+        server.starttls()
         server.login(SENDER_EMAIL, APP_PASSWORD)
         server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
     print("      Email sent successfully!")
