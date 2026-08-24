@@ -492,9 +492,15 @@ def main():
                 continue
             h_msg = email.message_from_bytes(h_data[0][1])
             raw_subject = h_msg.get("Subject", "")
+            from_header = h_msg.get("From", "")
             subject = decode_email_subject(raw_subject)
 
             if subject.startswith("📊") or subject.startswith("❌") or "alert" in subject.lower():
+                continue
+
+            # CRITICAL SECURITY & ACCURACY GUARD: Only process genuine candidate replies!
+            # Must start with "Re:" / "re:" to prevent parsing outgoing drill emails or system notifications.
+            if not subject.lower().startswith("re:"):
                 continue
 
             date_match = re.search(r'\d{4}-\d{2}-\d{2}', subject)
