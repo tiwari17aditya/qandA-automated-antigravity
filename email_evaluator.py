@@ -117,7 +117,7 @@ def extract_answers_from_text(text, questions):
         if len(chars) > 0 and (len(chars) / max(len(l_strip.replace(" ", "").replace(",", "").replace(".", "")), 1)) >= 0.7:
             candidate_chars.extend(chars)
 
-    if len(candidate_chars) >= 3:
+    if len(candidate_chars) >= 3 and abs(len(candidate_chars) - total_expected) <= 3:
         for idx in range(min(len(candidate_chars), total_expected)):
             result_answers[idx] = candidate_chars[idx].upper()
         return result_answers
@@ -498,16 +498,32 @@ def evaluate_pipeline_replies(pipe_cfg, mail, cursor, conn):
         from_header = h_msg.get("From", "")
         subject = decode_email_subject(raw_subject)
 
-        if subject.startswith("📊") or subject.startswith("❌") or "alert" in subject.lower():
+        # Skip system generated report emails, alerts, or notices (even if prefixed with Re:)
+        subj_lower = subject.lower()
+        if any(skip_kw in subj_lower for skip_kw in ["evaluation report", "performance report", "absent notice", "weekly study report", "alert", "📊", "❌", "🤖"]):
             continue
 
-        if not subject.lower().startswith("re:"):
+        if not subj_lower.startswith("re:"):
             continue
 
-        # Match receiver_email or exam name in subject/from
-        if receiver_email.lower() not in from_header.lower() and receiver_email.lower() not in subject.lower():
-            if exam_name.lower() not in subject.lower() and "drill" not in subject.lower():
-                continue
+        # Strict Pipeline & Exam Matching
+        # 1. Subject MUST contain this pipeline's exam_name (e.g. MPPSC or CTET 2026)
+        clean_exam = exam_name.lower().strip()
+        if clean_exam not in subject.lower():
+            continue
+
+        # 2. Exclude if subject mentions ANOTHER active pipeline's distinct exam name
+        other_active_exams = [
+            p.get("exam_name", "").lower().strip()
+            for p in get_pipeline_configs(only_enabled=True)
+            if p.get("pipeline_id") != pipeline_id and p.get("exam_name")
+        ]
+        if any(other_exam in subject.lower() for other_exam in other_active_exams if other_exam != clean_exam):
+            continue
+
+        # 3. Match sender: From header should contain receiver_email or SENDER_EMAIL
+        if receiver_email and receiver_email.lower() not in from_header.lower() and SENDER_EMAIL.lower() not in from_header.lower():
+            continue
 
         date_match = re.search(r'\d{4}-\d{2}-\d{2}', subject)
         if not date_match:
