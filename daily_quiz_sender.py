@@ -49,6 +49,18 @@ def generate_questions_for_pipeline(pipe_cfg):
     )
     cleaned_json = clean_ai_json_output(raw_response)
     questions = json.loads(cleaned_json)
+    if isinstance(questions, dict):
+        for key in ["questions", "data", "quiz", "mcqs", "items"]:
+            if key in questions and isinstance(questions[key], list):
+                questions = questions[key]
+                break
+        else:
+            for v in questions.values():
+                if isinstance(v, list):
+                    questions = v
+                    break
+    if not isinstance(questions, list):
+        raise ValueError("AI response did not return a valid list of questions.")
     print(f"   Generated {len(questions)} questions successfully.")
     return questions
 

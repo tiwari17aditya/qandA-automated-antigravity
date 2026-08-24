@@ -507,9 +507,10 @@ def evaluate_pipeline_replies(pipe_cfg, mail, cursor, conn):
             continue
 
         # Strict Pipeline & Exam Matching
-        # 1. Subject MUST contain this pipeline's exam_name (e.g. MPPSC or CTET 2026)
+        # 1. Subject MUST contain this pipeline's exam_name or base keyword (e.g. MPPSC or CTET)
         clean_exam = exam_name.lower().strip()
-        if clean_exam not in subject.lower():
+        base_keyword = clean_exam.split()[0] if clean_exam else ""
+        if clean_exam not in subject.lower() and (not base_keyword or base_keyword not in subject.lower()):
             continue
 
         # 2. Exclude if subject mentions ANOTHER active pipeline's distinct exam name
@@ -518,7 +519,7 @@ def evaluate_pipeline_replies(pipe_cfg, mail, cursor, conn):
             for p in get_pipeline_configs(only_enabled=True)
             if p.get("pipeline_id") != pipeline_id and p.get("exam_name")
         ]
-        if any(other_exam in subject.lower() for other_exam in other_active_exams if other_exam != clean_exam):
+        if any(other_exam in subject.lower() for other_exam in other_active_exams if other_exam != clean_exam and base_keyword not in other_exam):
             continue
 
         # 3. Match sender: From header should contain receiver_email or SENDER_EMAIL

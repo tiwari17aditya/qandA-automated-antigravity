@@ -89,7 +89,7 @@ def clean_ai_json_output(raw_text: str) -> str:
 def call_groq_api(api_key: str, model: str, prompt: str, response_json: bool = False) -> str:
     """
     Direct HTTP client for Groq OpenAI-compatible chat completion API.
-    Zero external dependencies, fast and lightweight.
+    Zero external dependencies, fast and lightweight. Includes fallback for models without json_object support.
     """
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
@@ -97,6 +97,7 @@ def call_groq_api(api_key: str, model: str, prompt: str, response_json: bool = F
         "Content-Type": "application/json",
         "User-Agent": "MPPSC-Quiz-Bot/2.0",
     }
+
     payload = {
         "model": model,
         "messages": [
@@ -110,18 +111,29 @@ def call_groq_api(api_key: str, model: str, prompt: str, response_json: bool = F
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(url, data=data, headers=headers, method="POST")
 
-    with urllib.request.urlopen(req, timeout=35) as resp:
-        res_data = json.loads(resp.read().decode("utf-8"))
-        return res_data["choices"][0]["message"]["content"]
+    try:
+        with urllib.request.urlopen(req, timeout=35) as resp:
+            res_data = json.loads(resp.read().decode("utf-8"))
+            return res_data["choices"][0]["message"]["content"]
+    except urllib.error.HTTPError as http_err:
+        if http_err.code == 400 and response_json:
+            # Fall back to standard request without response_format if model rejected json_object
+            payload.pop("response_format", None)
+            data = json.dumps(payload).encode("utf-8")
+            req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+            with urllib.request.urlopen(req, timeout=35) as resp:
+                res_data = json.loads(resp.read().decode("utf-8"))
+                return res_data["choices"][0]["message"]["content"]
+        raise http_err
 
 def generate_ai_completion(prompt: str, response_json: bool = False) -> str:
     """
     Unified multi-provider AI completion engine with automatic failover across:
-    1. Google Gemini Pool: gemini-2.5-flash, gemini-2.0-flash, gemini-2.0-flash-lite, gemini-1.5-flash
-    2. Groq Open-Source Pool: deepseek-r1-distill-llama-70b, qwen-2.5-32b, mistral-saba-24b, gemma2-9b-it
+    1. Google Gemini Pool: gemini-2.5-flash, gemini-2.5-flash-lite
+    2. Groq Open-Source Pool: llama-3.3-70b-versatile, deepseek-r1-distill-llama-70b, qwen-2.5-32b, gemma2-9b-it
     """
-    gemini_models = [GEMINI_MODEL, "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-2.5-flash", "gemini-1.5-flash"]
-    groq_models = [GROQ_MODEL, "deepseek-r1-distill-llama-70b", "qwen-2.5-32b", "mistral-saba-24b", "gemma2-9b-it"]
+    gemini_models = [GEMINI_MODEL, "gemini-2.5-flash", "gemini-2.5-flash-lite"]
+    groq_models = [GROQ_MODEL, "llama-3.3-70b-versatile", "deepseek-r1-distill-llama-70b", "qwen-2.5-32b", "gemma2-9b-it"]
 
     # Filter duplicates while preserving order
     gemini_pool = [m for i, m in enumerate(gemini_models) if m and m not in gemini_models[:i]]
