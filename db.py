@@ -228,4 +228,17 @@ def sync_topic_stats_for_pipeline(pipeline_id=None):
     cursor.close()
     conn.close()
 
+def reset_all_database_tables():
+    """
+    Truncates all recorded daily_tests, topic_stats, and weekly_reports data to start fresh.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("TRUNCATE TABLE daily_tests, topic_stats, weekly_reports RESTART IDENTITY CASCADE;")
+    conn.commit()
+    cursor.close()
+    conn.close()
+    print("[DB RESET] All recorded test data, topic stats, and weekly reports cleared successfully.")
+
+
 
