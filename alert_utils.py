@@ -116,24 +116,37 @@ def call_groq_api(api_key: str, model: str, prompt: str, response_json: bool = F
             res_data = json.loads(resp.read().decode("utf-8"))
             return res_data["choices"][0]["message"]["content"]
     except urllib.error.HTTPError as http_err:
+        err_body = ""
+        try:
+            err_body = http_err.read().decode("utf-8", errors="ignore")
+        except Exception:
+            pass
         if http_err.code == 400 and response_json:
             # Fall back to standard request without response_format if model rejected json_object
             payload.pop("response_format", None)
             data = json.dumps(payload).encode("utf-8")
             req = urllib.request.Request(url, data=data, headers=headers, method="POST")
-            with urllib.request.urlopen(req, timeout=35) as resp:
-                res_data = json.loads(resp.read().decode("utf-8"))
-                return res_data["choices"][0]["message"]["content"]
-        raise http_err
+            try:
+                with urllib.request.urlopen(req, timeout=35) as resp:
+                    res_data = json.loads(resp.read().decode("utf-8"))
+                    return res_data["choices"][0]["message"]["content"]
+            except urllib.error.HTTPError as fallback_err:
+                fb_body = ""
+                try:
+                    fb_body = fallback_err.read().decode("utf-8", errors="ignore")
+                except Exception:
+                    pass
+                raise RuntimeError(f"Groq API Error ({model}): {fallback_err.code} {fallback_err.reason} - {fb_body}") from fallback_err
+        raise RuntimeError(f"Groq API Error ({model}): {http_err.code} {http_err.reason} - {err_body}") from http_err
 
 def generate_ai_completion(prompt: str, response_json: bool = False) -> str:
     """
     Unified multi-provider AI completion engine with automatic failover across:
-    1. Google Gemini Pool: gemini-2.5-flash, gemini-2.5-flash-lite
-    2. Groq Open-Source Pool: llama-3.3-70b-versatile, deepseek-r1-distill-llama-70b, qwen-2.5-32b, gemma2-9b-it
+    1. Google Gemini Pool: gemini-3.6-flash, gemini-3.5-flash-lite, gemini-2.5-flash
+    2. Groq Open-Source Pool: qwen/qwen3.6-27b, groq/compound, openai/gpt-oss-120b, openai/gpt-oss-20b
     """
-    gemini_models = [GEMINI_MODEL, "gemini-2.5-flash", "gemini-2.5-flash-lite"]
-    groq_models = [GROQ_MODEL, "llama-3.3-70b-versatile", "deepseek-r1-distill-llama-70b", "qwen-2.5-32b", "gemma2-9b-it"]
+    gemini_models = [GEMINI_MODEL, "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-2.5-flash"]
+    groq_models = [GROQ_MODEL, "qwen/qwen3.6-27b", "groq/compound", "openai/gpt-oss-120b", "openai/gpt-oss-20b"]
 
     # Filter duplicates while preserving order
     gemini_pool = [m for i, m in enumerate(gemini_models) if m and m not in gemini_models[:i]]

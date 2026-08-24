@@ -56,8 +56,8 @@ DATABASE_URL = _get_str_env("DATABASE_URL", "")
 LLM_PROVIDER = _get_str_env("LLM_PROVIDER", "gemini").lower()
 
 # Model used for question generation (e.g. gemini-2.5-flash, deepseek-r1-distill-llama-70b, qwen-2.5-32b)
-GEMINI_MODEL = _get_str_env("GEMINI_MODEL", "gemini-2.5-flash")
-GROQ_MODEL = _get_str_env("GROQ_MODEL", "deepseek-r1-distill-llama-70b")
+GEMINI_MODEL = _get_str_env("GEMINI_MODEL", "gemini-3.6-flash")
+GROQ_MODEL = _get_str_env("GROQ_MODEL", "qwen/qwen3.6-27b")
 
 # Specific topics separated by comma (e.g. "Indus Valley Civilization (IVC), ICT")
 # If left blank, general MPPSC Prelims syllabus mix is used.
