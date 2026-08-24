@@ -2,8 +2,18 @@ name: 2. Check Reply & Auto-Evaluate (Every 8 Hours)
 
 on:
   schedule:
-    - cron: '30 2,10,18 * * *'
+    - cron: '30 2,10,18 * * *' # 08:00 AM, 04:00 PM, 12:00 AM IST
   workflow_dispatch:
+    inputs:
+      pipeline_id:
+        description: 'Target Pipeline (Select "all" or specific student)'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - mppsc_default
+          - ctet_swati
 
 jobs:
   evaluate-quiz:
@@ -28,4 +38,9 @@ jobs:
           RECEIVER_EMAIL: ${{ secrets.RECEIVER_EMAIL }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           PIPELINES_JSON: ${{ secrets.PIPELINES_JSON || vars.PIPELINES_JSON }}
-        run: python -B email_evaluator.py
+        run: |
+          if [ "${{ inputs.pipeline_id }}" != "" ] && [ "${{ inputs.pipeline_id }}" != "all" ]; then
+            python -B email_evaluator.py --pipeline ${{ inputs.pipeline_id }}
+          else
+            python -B email_evaluator.py
+          fi

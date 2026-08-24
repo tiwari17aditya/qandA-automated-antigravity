@@ -1,9 +1,19 @@
-name: 1. Send Daily MPPSC Quiz
+name: 1. Send Daily Quiz
 
 on:
   schedule:
     - cron: '30 2 * * *' # 02:30 UTC = 08:00 AM IST
   workflow_dispatch:
+    inputs:
+      pipeline_id:
+        description: 'Target Pipeline (Select "all" or specific student)'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - mppsc_default
+          - ctet_swati
 
 jobs:
   send-quiz:
@@ -35,4 +45,9 @@ jobs:
           PIPELINES_JSON: ${{ secrets.PIPELINES_JSON || vars.PIPELINES_JSON }}
           GEMINI_MODEL: ${{ secrets.GEMINI_MODEL || vars.GEMINI_MODEL }}
           GROQ_MODEL: ${{ secrets.GROQ_MODEL || vars.GROQ_MODEL }}
-        run: python -B daily_quiz_sender.py
+        run: |
+          if [ "${{ inputs.pipeline_id }}" != "" ] && [ "${{ inputs.pipeline_id }}" != "all" ]; then
+            python -B daily_quiz_sender.py --pipeline ${{ inputs.pipeline_id }}
+          else
+            python -B daily_quiz_sender.py
+          fi

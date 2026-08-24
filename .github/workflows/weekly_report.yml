@@ -2,8 +2,18 @@ name: 3. Sunday Weekly Study Progress Report
 
 on:
   schedule:
-    - cron: '30 14 * * 0'
+    - cron: '30 14 * * 0' # Sunday 02:30 PM UTC = 08:00 PM IST
   workflow_dispatch:
+    inputs:
+      pipeline_id:
+        description: 'Target Pipeline (Select "all" or specific student)'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - mppsc_default
+          - ctet_swati
 
 jobs:
   weekly-report:
@@ -33,4 +43,9 @@ jobs:
           LLM_PROVIDER: ${{ secrets.LLM_PROVIDER || vars.LLM_PROVIDER }}
           GEMINI_MODEL: ${{ secrets.GEMINI_MODEL || vars.GEMINI_MODEL }}
           GROQ_MODEL: ${{ secrets.GROQ_MODEL || vars.GROQ_MODEL }}
-        run: python -B weekly_report_sender.py
+        run: |
+          if [ "${{ inputs.pipeline_id }}" != "" ] && [ "${{ inputs.pipeline_id }}" != "all" ]; then
+            python -B weekly_report_sender.py --pipeline ${{ inputs.pipeline_id }}
+          else
+            python -B weekly_report_sender.py
+          fi
