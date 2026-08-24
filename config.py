@@ -70,7 +70,7 @@ TOTAL_QUESTIONS = _get_int_env("TOTAL_QUESTIONS", 15)
 def get_pipeline_configs(only_enabled=True):
     """
     Loads all student pipeline configurations from pipelines.json or PIPELINES_JSON env var.
-    Always includes the default mppsc_default pipeline if RECEIVER_EMAIL is present.
+    Always computes total_questions dynamically based on topics count and questions_per_topic if topics are provided.
     """
     import json
     pipelines = []
@@ -80,8 +80,9 @@ def get_pipeline_configs(only_enabled=True):
         "pipeline_id": "mppsc_default",
         "student_name": "Aditya",
         "receiver_email": RECEIVER_EMAIL,
-        "exam_name": "MPPSC",
+        "exam_name": "MPPSC Prelims",
         "topics": TOPICS,
+        "questions_per_topic": QUESTIONS_PER_TOPIC,
         "total_questions": TOTAL_QUESTIONS,
         "language": "english",
         "enabled": True
@@ -111,6 +112,18 @@ def get_pipeline_configs(only_enabled=True):
     if not has_default and RECEIVER_EMAIL:
         pipelines.insert(0, default_pipe)
 
+    # Dynamic computation of total_questions for each pipeline if topics & questions_per_topic are present
+    for p in pipelines:
+        topics_str = p.get("topics", "")
+        q_per_top = p.get("questions_per_topic") or QUESTIONS_PER_TOPIC
+        if topics_str:
+            t_list = [t.strip() for t in topics_str.split(",") if t.strip()]
+            if t_list:
+                # If explicit total_questions was NOT set or topic-based calculation is needed:
+                # Calculate exactly q_per_top per topic (e.g. 4 topics * 15 = 60 total questions)
+                p["calculated_total_questions"] = len(t_list) * q_per_top
+                p["questions_per_topic"] = q_per_top
+
     if only_enabled:
         return [p for p in pipelines if p.get("enabled", True)]
     return pipelines
@@ -119,7 +132,8 @@ def get_quiz_prompt_for_pipeline(pipeline_cfg):
     """Builds dynamic token-optimized prompt tailored to exam name, topics, question count, and language medium."""
     exam_name = pipeline_cfg.get("exam_name", "Competitive Exam")
     topics_str = pipeline_cfg.get("topics", "")
-    total_q = pipeline_cfg.get("total_questions", 15)
+    q_per_topic = pipeline_cfg.get("questions_per_topic", QUESTIONS_PER_TOPIC)
+    
     lang = pipeline_cfg.get("language", "english").lower()
     
     lang_rule = ""
@@ -132,12 +146,12 @@ def get_quiz_prompt_for_pipeline(pipeline_cfg):
 
     if topics_str:
         topic_list = [t.strip() for t in topics_str.split(",") if t.strip()]
-        per_topic = max(1, total_q // len(topic_list))
-        topic_bullets = "\n".join([f"- {t}: approximately {per_topic} questions" for t in topic_list])
+        total_q = len(topic_list) * q_per_topic
+        topic_bullets = "\n".join([f"- {t}: EXACTLY {q_per_topic} questions" for t in topic_list])
         
         return f"""
 Generate exactly {total_q} Multiple Choice Questions strictly for {exam_name}.
-CRITICAL CONSTRAINT: You MUST generate questions EXCLUSIVELY aligned with the following specified syllabus/topic focus:
+CRITICAL REQUIREMENT: Generate EXACTLY {q_per_topic} questions for EACH of the {len(topic_list)} topics below:
 {topic_bullets}
 
 Each question's 'topic' field MUST be set to the exact matching topic name from the list above.
