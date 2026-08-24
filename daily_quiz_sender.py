@@ -66,8 +66,11 @@ def generate_questions_for_pipeline(pipe_cfg):
 
 from pdf_font_utils import register_unicode_fonts
 
+def is_hindi_text(text):
+    return any('\u0900' <= char <= '\u097f' for char in str(text))
+
 def build_quiz_pdf_bytes(date_str, topic_desc, questions, exam_name="MPPSC"):
-    """Generates a clean PDF document containing Daily Quiz questions."""
+    """Generates a clean PDF document containing Daily Quiz questions with proper multi-language font rendering."""
     font_reg, font_bold = register_unicode_fonts()
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -84,7 +87,7 @@ def build_quiz_pdf_bytes(date_str, topic_desc, questions, exam_name="MPPSC"):
     title_style = ParagraphStyle(
         'DocTitle',
         parent=styles['Normal'],
-        fontName=font_bold,
+        fontName='Helvetica-Bold',
         fontSize=18,
         leading=22,
         textColor=HexColor('#2B6CB0'),
@@ -93,7 +96,7 @@ def build_quiz_pdf_bytes(date_str, topic_desc, questions, exam_name="MPPSC"):
     subtitle_style = ParagraphStyle(
         'DocSubTitle',
         parent=styles['Normal'],
-        fontName=font_reg,
+        fontName='Helvetica',
         fontSize=10,
         leading=14,
         textColor=HexColor('#4A5568'),
@@ -102,7 +105,7 @@ def build_quiz_pdf_bytes(date_str, topic_desc, questions, exam_name="MPPSC"):
     instruction_style = ParagraphStyle(
         'InstructionText',
         parent=styles['Normal'],
-        fontName=font_reg,
+        fontName='Helvetica',
         fontSize=9.5,
         leading=13,
         textColor=HexColor('#2C5282')
@@ -110,13 +113,22 @@ def build_quiz_pdf_bytes(date_str, topic_desc, questions, exam_name="MPPSC"):
     q_header_style = ParagraphStyle(
         'QHeader',
         parent=styles['Normal'],
-        fontName=font_bold,
+        fontName='Helvetica-Bold',
         fontSize=10,
         leading=13,
         textColor=HexColor('#2B6CB0')
     )
-    q_text_style = ParagraphStyle(
-        'QText',
+    q_text_eng = ParagraphStyle(
+        'QTextEng',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=10.5,
+        leading=14,
+        textColor=HexColor('#1A202C'),
+        spaceAfter=6
+    )
+    q_text_dev = ParagraphStyle(
+        'QTextDev',
         parent=styles['Normal'],
         fontName=font_bold,
         fontSize=10.5,
@@ -124,8 +136,16 @@ def build_quiz_pdf_bytes(date_str, topic_desc, questions, exam_name="MPPSC"):
         textColor=HexColor('#1A202C'),
         spaceAfter=6
     )
-    opt_style = ParagraphStyle(
-        'OptText',
+    opt_eng = ParagraphStyle(
+        'OptEng',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=9.5,
+        leading=13,
+        textColor=HexColor('#2D3748')
+    )
+    opt_dev = ParagraphStyle(
+        'OptDev',
         parent=styles['Normal'],
         fontName=font_reg,
         fontSize=9.5,
@@ -135,7 +155,7 @@ def build_quiz_pdf_bytes(date_str, topic_desc, questions, exam_name="MPPSC"):
 
     elements = []
 
-    # Title & Header
+    # Title & Header (English rendering for titles, metadata, submission banner)
     elements.append(Paragraph(f"🎯 {exam_name} Daily Drill - {date_str}", title_style))
     elements.append(Paragraph(f"Focus: {topic_desc} &bull; Total Questions: {len(questions)}", subtitle_style))
     
@@ -160,17 +180,27 @@ def build_quiz_pdf_bytes(date_str, topic_desc, questions, exam_name="MPPSC"):
         q_text = q.get('question', '')
         options = q.get('options', {})
 
+        # Question Text Paragraph (selects Devanagari or English font)
+        if is_hindi_text(q_text):
+            q_paragraph = Paragraph(q_text, q_text_dev)
+        else:
+            q_paragraph = Paragraph(q_text, q_text_eng)
+
         q_elements = [
             Paragraph(f"Q{q_num}. [{topic}]", q_header_style),
             Spacer(1, 3),
-            Paragraph(q_text, q_text_style),
+            q_paragraph,
             Spacer(1, 4)
         ]
 
         opt_rows = []
         for opt_key in ['A', 'B', 'C', 'D']:
             opt_val = options.get(opt_key, '')
-            opt_rows.append([Paragraph(f"<b>({opt_key})</b> {opt_val}", opt_style)])
+            if is_hindi_text(opt_val):
+                opt_paragraph = Paragraph(f'<font name="Helvetica-Bold"><b>({opt_key})</b></font> {opt_val}', opt_dev)
+            else:
+                opt_paragraph = Paragraph(f'<b>({opt_key})</b> {opt_val}', opt_eng)
+            opt_rows.append([opt_paragraph])
 
         opt_table = Table(opt_rows, colWidths=[500])
         opt_table.setStyle(TableStyle([

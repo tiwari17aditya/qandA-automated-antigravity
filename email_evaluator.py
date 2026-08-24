@@ -157,6 +157,9 @@ def extract_answers_from_text(text, questions):
 
 from pdf_font_utils import register_unicode_fonts
 
+def is_hindi_text(text):
+    return any('\u0900' <= char <= '\u097f' for char in str(text))
+
 def build_eval_pdf_bytes(date_str, score, total_q, breakdown_records):
     """Generates a clean PDF document containing detailed question evaluation with all 4 options highlighted."""
     font_reg, font_bold = register_unicode_fonts()
@@ -175,7 +178,7 @@ def build_eval_pdf_bytes(date_str, score, total_q, breakdown_records):
     title_style = ParagraphStyle(
         'EvalTitle',
         parent=styles['Normal'],
-        fontName=font_bold,
+        fontName='Helvetica-Bold',
         fontSize=18,
         leading=22,
         textColor=HexColor('#2B6CB0'),
@@ -185,7 +188,7 @@ def build_eval_pdf_bytes(date_str, score, total_q, breakdown_records):
     subtitle_style = ParagraphStyle(
         'EvalSubTitle',
         parent=styles['Normal'],
-        fontName=font_bold,
+        fontName='Helvetica-Bold',
         fontSize=12,
         leading=16,
         textColor=HexColor('#2D3748'),
@@ -195,13 +198,22 @@ def build_eval_pdf_bytes(date_str, score, total_q, breakdown_records):
     q_header_style = ParagraphStyle(
         'QHeader',
         parent=styles['Normal'],
-        fontName=font_bold,
+        fontName='Helvetica-Bold',
         fontSize=10,
         leading=13,
         textColor=HexColor('#4A5568')
     )
-    q_text_style = ParagraphStyle(
-        'QText',
+    q_text_eng = ParagraphStyle(
+        'QTextEng',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=10.5,
+        leading=14,
+        textColor=HexColor('#1A202C'),
+        spaceAfter=6
+    )
+    q_text_dev = ParagraphStyle(
+        'QTextDev',
         parent=styles['Normal'],
         fontName=font_bold,
         fontSize=10.5,
@@ -209,32 +221,64 @@ def build_eval_pdf_bytes(date_str, score, total_q, breakdown_records):
         textColor=HexColor('#1A202C'),
         spaceAfter=6
     )
-    opt_normal = ParagraphStyle(
-        'OptNormal',
+    opt_normal_eng = ParagraphStyle(
+        'OptNormalEng',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=9,
+        leading=12,
+        textColor=HexColor('#2D3748')
+    )
+    opt_normal_dev = ParagraphStyle(
+        'OptNormalDev',
         parent=styles['Normal'],
         fontName=font_reg,
         fontSize=9,
         leading=12,
         textColor=HexColor('#2D3748')
     )
-    opt_user_correct = ParagraphStyle(
-        'OptUserCorrect',
+    opt_user_correct_eng = ParagraphStyle(
+        'OptUserCorrectEng',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=9,
+        leading=12,
+        textColor=HexColor('#22543D')
+    )
+    opt_user_correct_dev = ParagraphStyle(
+        'OptUserCorrectDev',
         parent=styles['Normal'],
         fontName=font_bold,
         fontSize=9,
         leading=12,
         textColor=HexColor('#22543D')
     )
-    opt_user_wrong = ParagraphStyle(
-        'OptUserWrong',
+    opt_user_wrong_eng = ParagraphStyle(
+        'OptUserWrongEng',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=9,
+        leading=12,
+        textColor=HexColor('#742A2A')
+    )
+    opt_user_wrong_dev = ParagraphStyle(
+        'OptUserWrongDev',
         parent=styles['Normal'],
         fontName=font_bold,
         fontSize=9,
         leading=12,
         textColor=HexColor('#742A2A')
     )
-    opt_correct_needed = ParagraphStyle(
-        'OptCorrectNeeded',
+    opt_correct_needed_eng = ParagraphStyle(
+        'OptCorrectNeededEng',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=9,
+        leading=12,
+        textColor=HexColor('#22543D')
+    )
+    opt_correct_needed_dev = ParagraphStyle(
+        'OptCorrectNeededDev',
         parent=styles['Normal'],
         fontName=font_bold,
         fontSize=9,
@@ -242,8 +286,16 @@ def build_eval_pdf_bytes(date_str, score, total_q, breakdown_records):
         textColor=HexColor('#22543D')
     )
 
-    exp_style = ParagraphStyle(
-        'ExpText',
+    exp_eng = ParagraphStyle(
+        'ExpTextEng',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=9,
+        leading=13,
+        textColor=HexColor('#4A5568')
+    )
+    exp_dev = ParagraphStyle(
+        'ExpTextDev',
         parent=styles['Normal'],
         fontName=font_reg,
         fontSize=9,
@@ -285,10 +337,12 @@ def build_eval_pdf_bytes(date_str, score, total_q, breakdown_records):
             border_color = HexColor('#CBD5E0')
             bg_card = HexColor('#FAFAFA')
 
+        q_paragraph = Paragraph(q_text, q_text_dev) if is_hindi_text(q_text) else Paragraph(q_text, q_text_eng)
+
         card_elements = [
             Paragraph(f"Q{q_num}. [{topic}] &bull; {badge_text}", q_header_style),
             Spacer(1, 4),
-            Paragraph(q_text, q_text_style),
+            q_paragraph,
             Spacer(1, 4)
         ]
 
@@ -298,18 +352,31 @@ def build_eval_pdf_bytes(date_str, score, total_q, breakdown_records):
             is_user_choice = (user_ans == opt_key)
             is_right_choice = (correct_ans == opt_key)
 
+            has_hindi_opt = is_hindi_text(opt_val)
+
             if is_user_choice and is_right_choice:
                 cell_bg = HexColor('#C6F6D5')
-                txt = Paragraph(f"✅ <b>({opt_key}) {opt_val}</b> &mdash; <i>Your Choice (Correct)</i>", opt_user_correct)
+                prefix_tag = f'<font name="Helvetica-Bold">✅ <b>({opt_key})</b></font>'
+                suffix_tag = f'<font name="Helvetica-Bold"> &mdash; <i>Your Choice (Correct)</i></font>'
+                style_use = opt_user_correct_dev if has_hindi_opt else opt_user_correct_eng
+                txt = Paragraph(f"{prefix_tag} {opt_val}{suffix_tag}", style_use)
             elif is_user_choice and not is_right_choice:
                 cell_bg = HexColor('#FED7D7')
-                txt = Paragraph(f"❌ <b>({opt_key}) {opt_val}</b> &mdash; <i>Your Choice (Incorrect)</i>", opt_user_wrong)
+                prefix_tag = f'<font name="Helvetica-Bold">❌ <b>({opt_key})</b></font>'
+                suffix_tag = f'<font name="Helvetica-Bold"> &mdash; <i>Your Choice (Incorrect)</i></font>'
+                style_use = opt_user_wrong_dev if has_hindi_opt else opt_user_wrong_eng
+                txt = Paragraph(f"{prefix_tag} {opt_val}{suffix_tag}", style_use)
             elif not is_user_choice and is_right_choice:
                 cell_bg = HexColor('#C6F6D5')
-                txt = Paragraph(f"✔️ <b>({opt_key}) {opt_val}</b> &mdash; <i>Correct Answer</i>", opt_correct_needed)
+                prefix_tag = f'<font name="Helvetica-Bold">✔️ <b>({opt_key})</b></font>'
+                suffix_tag = f'<font name="Helvetica-Bold"> &mdash; <i>Correct Answer</i></font>'
+                style_use = opt_correct_needed_dev if has_hindi_opt else opt_correct_needed_eng
+                txt = Paragraph(f"{prefix_tag} {opt_val}{suffix_tag}", style_use)
             else:
                 cell_bg = HexColor('#FFFFFF')
-                txt = Paragraph(f"({opt_key}) {opt_val}", opt_normal)
+                prefix_tag = f'<font name="Helvetica-Bold"><b>({opt_key})</b></font>'
+                style_use = opt_normal_dev if has_hindi_opt else opt_normal_eng
+                txt = Paragraph(f"{prefix_tag} {opt_val}", style_use)
 
             opt_table_rows.append(([txt], cell_bg))
 
@@ -329,7 +396,9 @@ def build_eval_pdf_bytes(date_str, score, total_q, breakdown_records):
 
         if explanation:
             card_elements.append(Spacer(1, 4))
-            card_elements.append(Paragraph(f"💡 <b>Explanation:</b> <i>{explanation}</i>", exp_style))
+            exp_prefix = '<font name="Helvetica-Bold">💡 <b>Explanation:</b></font>'
+            exp_style_use = exp_dev if is_hindi_text(explanation) else exp_eng
+            card_elements.append(Paragraph(f"{exp_prefix} <i>{explanation}</i>", exp_style_use))
 
         card_table = Table([[card_elements]], colWidths=[520])
         card_table.setStyle(TableStyle([
