@@ -27,7 +27,7 @@ from config import (
     DATABASE_URL,
     validate_config,
 )
-from db import get_db_connection, init_and_migrate_db, mark_expired_tests_absent
+from db import get_db_connection, init_and_migrate_db, mark_expired_tests_absent, sync_topic_stats_for_pipeline
 from alert_utils import send_error_alert
 
 def decode_email_subject(raw_subj):
@@ -155,8 +155,11 @@ def extract_answers_from_text(text, questions):
 
     return None
 
+from pdf_font_utils import register_unicode_fonts
+
 def build_eval_pdf_bytes(date_str, score, total_q, breakdown_records):
     """Generates a clean PDF document containing detailed question evaluation with all 4 options highlighted."""
+    font_reg, font_bold = register_unicode_fonts()
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer,
@@ -172,7 +175,7 @@ def build_eval_pdf_bytes(date_str, score, total_q, breakdown_records):
     title_style = ParagraphStyle(
         'EvalTitle',
         parent=styles['Normal'],
-        fontName='Helvetica-Bold',
+        fontName=font_bold,
         fontSize=18,
         leading=22,
         textColor=HexColor('#2B6CB0'),
@@ -182,7 +185,7 @@ def build_eval_pdf_bytes(date_str, score, total_q, breakdown_records):
     subtitle_style = ParagraphStyle(
         'EvalSubTitle',
         parent=styles['Normal'],
-        fontName='Helvetica-Bold',
+        fontName=font_bold,
         fontSize=12,
         leading=16,
         textColor=HexColor('#2D3748'),
@@ -192,7 +195,7 @@ def build_eval_pdf_bytes(date_str, score, total_q, breakdown_records):
     q_header_style = ParagraphStyle(
         'QHeader',
         parent=styles['Normal'],
-        fontName='Helvetica-Bold',
+        fontName=font_bold,
         fontSize=10,
         leading=13,
         textColor=HexColor('#4A5568')
@@ -200,7 +203,7 @@ def build_eval_pdf_bytes(date_str, score, total_q, breakdown_records):
     q_text_style = ParagraphStyle(
         'QText',
         parent=styles['Normal'],
-        fontName='Helvetica-Bold',
+        fontName=font_bold,
         fontSize=10.5,
         leading=14,
         textColor=HexColor('#1A202C'),
@@ -209,7 +212,7 @@ def build_eval_pdf_bytes(date_str, score, total_q, breakdown_records):
     opt_normal = ParagraphStyle(
         'OptNormal',
         parent=styles['Normal'],
-        fontName='Helvetica',
+        fontName=font_reg,
         fontSize=9,
         leading=12,
         textColor=HexColor('#2D3748')
@@ -217,7 +220,7 @@ def build_eval_pdf_bytes(date_str, score, total_q, breakdown_records):
     opt_user_correct = ParagraphStyle(
         'OptUserCorrect',
         parent=styles['Normal'],
-        fontName='Helvetica-Bold',
+        fontName=font_bold,
         fontSize=9,
         leading=12,
         textColor=HexColor('#22543D')
@@ -225,7 +228,7 @@ def build_eval_pdf_bytes(date_str, score, total_q, breakdown_records):
     opt_user_wrong = ParagraphStyle(
         'OptUserWrong',
         parent=styles['Normal'],
-        fontName='Helvetica-Bold',
+        fontName=font_bold,
         fontSize=9,
         leading=12,
         textColor=HexColor('#742A2A')
@@ -233,7 +236,7 @@ def build_eval_pdf_bytes(date_str, score, total_q, breakdown_records):
     opt_correct_needed = ParagraphStyle(
         'OptCorrectNeeded',
         parent=styles['Normal'],
-        fontName='Helvetica-Bold',
+        fontName=font_bold,
         fontSize=9,
         leading=12,
         textColor=HexColor('#22543D')
@@ -242,7 +245,7 @@ def build_eval_pdf_bytes(date_str, score, total_q, breakdown_records):
     exp_style = ParagraphStyle(
         'ExpText',
         parent=styles['Normal'],
-        fontName='Helvetica-Oblique',
+        fontName=font_reg,
         fontSize=9,
         leading=13,
         textColor=HexColor('#4A5568')
@@ -581,18 +584,6 @@ def evaluate_pipeline_replies(pipe_cfg, mail, cursor, conn):
 
         pct = (score / len(questions)) * 100.0 if questions else 0.0
 
-        for topic, data in topic_updates.items():
-            if data["att"] > 0:
-                cursor.execute("""
-                    INSERT INTO topic_stats (topic, pipeline_id, attempted, correct, accuracy, updated_at)
-                    VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-                    ON CONFLICT (pipeline_id, topic) DO UPDATE SET 
-                        attempted = topic_stats.attempted + EXCLUDED.attempted,
-                        correct = topic_stats.correct + EXCLUDED.correct,
-                        accuracy = ((topic_stats.correct + EXCLUDED.correct)::float / (topic_stats.attempted + EXCLUDED.attempted)::float) * 100.0,
-                        updated_at = CURRENT_TIMESTAMP;
-                """, (topic, pipeline_id, data["att"], data["cor"], (data["cor"] / data["att"]) * 100.0))
-
         cursor.execute("""
             UPDATE daily_tests 
             SET evaluated = TRUE, 
@@ -605,6 +596,9 @@ def evaluate_pipeline_replies(pipe_cfg, mail, cursor, conn):
             WHERE test_date = %s AND pipeline_id = %s
         """, (score, pct, json.dumps(user_answers), json.dumps(breakdown_records), target_date, pipeline_id))
         conn.commit()
+
+        # Recalculate topic stats from ground truth evaluated records for exact accuracy
+        sync_topic_stats_for_pipeline(pipeline_id)
 
         cursor.execute("SELECT topic, attempted, correct FROM topic_stats WHERE pipeline_id = %s ORDER BY (correct::float / NULLIF(attempted, 0)) ASC", (pipeline_id,))
         all_stats = cursor.fetchall()

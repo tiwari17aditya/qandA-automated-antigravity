@@ -175,3 +175,57 @@ def get_previous_test_data(current_date=None, pipeline_id="mppsc_default"):
         "breakdown": row[8] or [],
     }
 
+import json
+
+def sync_topic_stats_for_pipeline(pipeline_id=None):
+    """
+    Recalculates topic_stats table rows directly from all evaluated daily_tests breakdown_json records
+    for the specified pipeline_id (or all pipelines if None), guaranteeing 100% mathematical accuracy.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    if pipeline_id:
+        pipelines = [pipeline_id]
+    else:
+        cursor.execute("SELECT DISTINCT pipeline_id FROM daily_tests")
+        pipelines = [r[0] for r in cursor.fetchall() if r[0]]
+
+    for pid in pipelines:
+        cursor.execute("""
+            SELECT breakdown_json 
+            FROM daily_tests 
+            WHERE pipeline_id = %s AND evaluated = TRUE AND breakdown_json IS NOT NULL
+        """, (pid,))
+        rows = cursor.fetchall()
+        
+        topic_totals = {}
+        for (breakdown_json,) in rows:
+            if not breakdown_json:
+                continue
+            records = json.loads(breakdown_json) if isinstance(breakdown_json, str) else breakdown_json
+            for item in records:
+                top = item.get("topic", "General")
+                is_cor = item.get("is_correct", False)
+                if top not in topic_totals:
+                    topic_totals[top] = {"att": 0, "cor": 0}
+                topic_totals[top]["att"] += 1
+                if is_cor:
+                    topic_totals[top]["cor"] += 1
+
+        cursor.execute("DELETE FROM topic_stats WHERE pipeline_id = %s", (pid,))
+        
+        for top, d in topic_totals.items():
+            att = d["att"]
+            cor = d["cor"]
+            acc = (cor / att * 100.0) if att > 0 else 0.0
+            cursor.execute("""
+                INSERT INTO topic_stats (topic, pipeline_id, attempted, correct, accuracy, updated_at)
+                VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+            """, (top, pid, att, cor, acc))
+            
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+

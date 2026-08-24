@@ -52,8 +52,11 @@ def generate_questions_for_pipeline(pipe_cfg):
     print(f"   Generated {len(questions)} questions successfully.")
     return questions
 
+from pdf_font_utils import register_unicode_fonts
+
 def build_quiz_pdf_bytes(date_str, topic_desc, questions, exam_name="MPPSC"):
     """Generates a clean PDF document containing Daily Quiz questions."""
+    font_reg, font_bold = register_unicode_fonts()
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer,
@@ -69,7 +72,7 @@ def build_quiz_pdf_bytes(date_str, topic_desc, questions, exam_name="MPPSC"):
     title_style = ParagraphStyle(
         'DocTitle',
         parent=styles['Normal'],
-        fontName='Helvetica-Bold',
+        fontName=font_bold,
         fontSize=18,
         leading=22,
         textColor=HexColor('#2B6CB0'),
@@ -78,7 +81,7 @@ def build_quiz_pdf_bytes(date_str, topic_desc, questions, exam_name="MPPSC"):
     subtitle_style = ParagraphStyle(
         'DocSubTitle',
         parent=styles['Normal'],
-        fontName='Helvetica',
+        fontName=font_reg,
         fontSize=10,
         leading=14,
         textColor=HexColor('#4A5568'),
@@ -87,7 +90,7 @@ def build_quiz_pdf_bytes(date_str, topic_desc, questions, exam_name="MPPSC"):
     instruction_style = ParagraphStyle(
         'InstructionText',
         parent=styles['Normal'],
-        fontName='Helvetica-Oblique',
+        fontName=font_reg,
         fontSize=9.5,
         leading=13,
         textColor=HexColor('#2C5282')
@@ -95,7 +98,7 @@ def build_quiz_pdf_bytes(date_str, topic_desc, questions, exam_name="MPPSC"):
     q_header_style = ParagraphStyle(
         'QHeader',
         parent=styles['Normal'],
-        fontName='Helvetica-Bold',
+        fontName=font_bold,
         fontSize=10,
         leading=13,
         textColor=HexColor('#2B6CB0')
@@ -103,7 +106,7 @@ def build_quiz_pdf_bytes(date_str, topic_desc, questions, exam_name="MPPSC"):
     q_text_style = ParagraphStyle(
         'QText',
         parent=styles['Normal'],
-        fontName='Helvetica-Bold',
+        fontName=font_bold,
         fontSize=10.5,
         leading=14,
         textColor=HexColor('#1A202C'),
@@ -112,7 +115,7 @@ def build_quiz_pdf_bytes(date_str, topic_desc, questions, exam_name="MPPSC"):
     opt_style = ParagraphStyle(
         'OptText',
         parent=styles['Normal'],
-        fontName='Helvetica',
+        fontName=font_reg,
         fontSize=9.5,
         leading=13,
         textColor=HexColor('#2D3748')

@@ -19,7 +19,7 @@ from config import (
     get_pipeline_configs,
     validate_config,
 )
-from db import get_db_connection, init_and_migrate_db, mark_expired_tests_absent
+from db import get_db_connection, init_and_migrate_db, mark_expired_tests_absent, sync_topic_stats_for_pipeline
 from alert_utils import send_error_alert, generate_ai_completion
 
 def generate_ai_study_recommendation(summary_data, weak_topics, daily_scores_str="", exam_name="MPPSC", student_name="Candidate", lang="english"):
@@ -272,6 +272,7 @@ def run_pipeline_weekly_report(pipe_cfg, cursor, conn):
         "daily_scores_str": daily_scores_str,
     }
 
+    sync_topic_stats_for_pipeline(pipeline_id)
     cursor.execute("SELECT topic, attempted, correct, accuracy FROM topic_stats WHERE pipeline_id = %s ORDER BY accuracy ASC;", (pipeline_id,))
     topic_rows = cursor.fetchall()
     weak_topics = [{"topic": r[0], "accuracy": r[3]} for r in topic_rows if r[3] < 70]
