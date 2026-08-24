@@ -1,0 +1,12 @@
+[
+  {
+    "pipeline_id": "ctet_swati",
+    "student_name": "Swati",
+    "receiver_email": "kamlaswati@gmail.com",
+    "exam_name": "CTET 2026",
+    "topics": "Child Development & Pedagogy, Language I & II Pedagogy, Mathematics & Science, Social Studies",
+    "total_questions": 50,
+    "language": "hindi",
+    "enabled": true
+  }
+]

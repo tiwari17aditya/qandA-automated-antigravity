@@ -67,16 +67,77 @@ TOPICS = _get_str_env("TOPICS", "")
 QUESTIONS_PER_TOPIC = _get_int_env("QUESTIONS_PER_TOPIC", 15)
 TOTAL_QUESTIONS = _get_int_env("TOTAL_QUESTIONS", 15)
 
-def get_quiz_prompt():
-    """Builds dynamic token-optimized prompt based on specified topics in .env."""
-    token_opt_rule = "Constraints: Keep questions crisp. Keep explanation ultra-concise (max 15 words). Output pure JSON only."
-    if TOPICS:
-        topic_list = [t.strip() for t in TOPICS.split(",") if t.strip()]
-        topic_bullets = "\n".join([f"- {t}: exactly {QUESTIONS_PER_TOPIC} questions" for t in topic_list])
-        total_q = len(topic_list) * QUESTIONS_PER_TOPIC
+def get_pipeline_configs(only_enabled=True):
+    """
+    Loads all student pipeline configurations from pipelines.json or PIPELINES_JSON env var.
+    Always includes the default mppsc_default pipeline if RECEIVER_EMAIL is present.
+    """
+    import json
+    pipelines = []
+    
+    # 1. Default pipeline (Aditya / MPPSC)
+    default_pipe = {
+        "pipeline_id": "mppsc_default",
+        "student_name": "Aditya",
+        "receiver_email": RECEIVER_EMAIL,
+        "exam_name": "MPPSC",
+        "topics": TOPICS,
+        "total_questions": TOTAL_QUESTIONS,
+        "language": "english",
+        "enabled": True
+    }
+    
+    json_source = os.getenv("PIPELINES_JSON")
+    pipelines_file = Path(__file__).resolve().parent / "pipelines.json"
+    
+    if json_source and json_source.strip():
+        try:
+            parsed = json.loads(json_source)
+            if isinstance(parsed, list):
+                pipelines = parsed
+        except Exception as e:
+            print(f"[WARN] Failed to parse PIPELINES_JSON env var: {e}")
+    elif pipelines_file.exists():
+        try:
+            with open(pipelines_file, "r", encoding="utf-8") as f:
+                parsed = json.load(f)
+                if isinstance(parsed, list):
+                    pipelines = parsed
+        except Exception as e:
+            print(f"[WARN] Failed to read pipelines.json: {e}")
+
+    # Ensure default pipeline is present if not explicitly included
+    has_default = any(p.get("pipeline_id") == "mppsc_default" for p in pipelines)
+    if not has_default and RECEIVER_EMAIL:
+        pipelines.insert(0, default_pipe)
+
+    if only_enabled:
+        return [p for p in pipelines if p.get("enabled", True)]
+    return pipelines
+
+def get_quiz_prompt_for_pipeline(pipeline_cfg):
+    """Builds dynamic token-optimized prompt tailored to exam name, topics, question count, and language medium."""
+    exam_name = pipeline_cfg.get("exam_name", "Competitive Exam")
+    topics_str = pipeline_cfg.get("topics", "")
+    total_q = pipeline_cfg.get("total_questions", 15)
+    lang = pipeline_cfg.get("language", "english").lower()
+    
+    lang_rule = ""
+    if lang == "hindi":
+        lang_rule = "IMPORTANT: Write ALL questions, options (A, B, C, D), and explanations in clear Devanagari Hindi (हिन्दी भाषा)."
+    else:
+        lang_rule = "Write questions, options, and explanations in English."
+
+    token_opt_rule = f"Constraints: Keep questions crisp. Keep explanation ultra-concise (max 15 words). Output pure JSON array only. {lang_rule}"
+
+    if topics_str:
+        topic_list = [t.strip() for t in topics_str.split(",") if t.strip()]
+        per_topic = max(1, total_q // len(topic_list))
+        topic_bullets = "\n".join([f"- {t}: approximately {per_topic} questions" for t in topic_list])
+        
         return f"""
-Generate exactly {total_q} Multiple Choice Questions strictly for MPPSC State Services Prelims.
-CRITICAL CONSTRAINT: You MUST generate questions EXCLUSIVELY for the following specified topic(s). DO NOT include general questions from other subjects:
+Generate exactly {total_q} Multiple Choice Questions strictly for {exam_name}.
+CRITICAL CONSTRAINT: You MUST generate questions EXCLUSIVELY aligned with the following specified syllabus/topic focus:
 {topic_bullets}
 
 Each question's 'topic' field MUST be set to the exact matching topic name from the list above.
@@ -97,8 +158,8 @@ Return ONLY valid JSON matching this schema:
 """.strip()
     else:
         return f"""
-Generate {TOTAL_QUESTIONS} high-yield Multiple Choice Questions strictly for MPPSC State Services Prelims.
-Mix: MP GK (History, Geography, Polity, Economy), Unit 9 ICT & Tech, Unit 10 MP Tribes & Culture, Indian Polity, History, Science.
+Generate exactly {total_q} high-yield Multiple Choice Questions strictly for {exam_name}.
+Ensure questions cover the full core syllabus of {exam_name}.
 
 {token_opt_rule}
 
@@ -106,7 +167,7 @@ Return ONLY valid JSON matching this schema:
 [
   {{
     "q_num": 1,
-    "topic": "MP GK - History & Culture",
+    "topic": "{exam_name} General Practice",
     "question": "Question text?",
     "options": {{"A": "...", "B": "...", "C": "...", "D": "..."}},
     "correct_option": "A",
@@ -114,6 +175,20 @@ Return ONLY valid JSON matching this schema:
   }}
 ]
 """.strip()
+
+def get_quiz_prompt():
+    """Builds dynamic token-optimized prompt for default MPPSC pipeline."""
+    default_pipe = {
+        "pipeline_id": "mppsc_default",
+        "student_name": "Aditya",
+        "receiver_email": RECEIVER_EMAIL,
+        "exam_name": "MPPSC State Services Prelims",
+        "topics": TOPICS,
+        "total_questions": TOTAL_QUESTIONS,
+        "language": "english",
+        "enabled": True
+    }
+    return get_quiz_prompt_for_pipeline(default_pipe)
 
 # ==========================================
 # 🛡️ VALIDATION HELPER

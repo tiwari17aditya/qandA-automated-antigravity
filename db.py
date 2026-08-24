@@ -7,7 +7,7 @@ def get_db_connection():
 
 def init_and_migrate_db():
     """
-    Initializes PostgreSQL tables and automatically applies schema migrations.
+    Initializes PostgreSQL tables and automatically applies schema migrations for multi-pipeline support.
     """
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -16,7 +16,7 @@ def init_and_migrate_db():
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS daily_tests (
             test_id VARCHAR(50) PRIMARY KEY,
-            test_date DATE UNIQUE,
+            test_date DATE,
             questions_json JSONB,
             evaluated BOOLEAN DEFAULT FALSE,
             score INTEGER DEFAULT 0,
@@ -25,8 +25,9 @@ def init_and_migrate_db():
         );
     """)
 
-    # Auto-migration for daily_tests: add extra analysis columns if not present
+    # Auto-migration for daily_tests: add extra analysis columns & pipeline_id if not present
     cursor.execute("""
+        ALTER TABLE daily_tests ADD COLUMN IF NOT EXISTS pipeline_id VARCHAR(50) DEFAULT 'mppsc_default';
         ALTER TABLE daily_tests ADD COLUMN IF NOT EXISTS topics TEXT;
         ALTER TABLE daily_tests ADD COLUMN IF NOT EXISTS user_answers_json JSONB;
         ALTER TABLE daily_tests ADD COLUMN IF NOT EXISTS breakdown_json JSONB;
@@ -35,10 +36,24 @@ def init_and_migrate_db():
         ALTER TABLE daily_tests ADD COLUMN IF NOT EXISTS evaluated_at TIMESTAMP;
     """)
 
+    # Drop single test_date unique constraint if it exists, replace with composite (pipeline_id, test_date)
+    cursor.execute("""
+        DO $$ 
+        BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'daily_tests_test_date_key') THEN
+                ALTER TABLE daily_tests DROP CONSTRAINT daily_tests_test_date_key;
+            END IF;
+        END $$;
+    """)
+    cursor.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_tests_pipe_date ON daily_tests(pipeline_id, test_date);
+    """)
+
     # 2. Topic Stats table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS topic_stats (
-            topic VARCHAR(100) PRIMARY KEY,
+            topic VARCHAR(100),
+            pipeline_id VARCHAR(50) DEFAULT 'mppsc_default',
             attempted INTEGER DEFAULT 0,
             correct INTEGER DEFAULT 0,
             accuracy FLOAT DEFAULT 0.0,
@@ -46,13 +61,26 @@ def init_and_migrate_db():
         );
     """)
     cursor.execute("""
+        ALTER TABLE topic_stats ADD COLUMN IF NOT EXISTS pipeline_id VARCHAR(50) DEFAULT 'mppsc_default';
         ALTER TABLE topic_stats ADD COLUMN IF NOT EXISTS accuracy FLOAT DEFAULT 0.0;
+    """)
+    cursor.execute("""
+        DO $$ 
+        BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'topic_stats_pkey') THEN
+                ALTER TABLE topic_stats DROP CONSTRAINT topic_stats_pkey;
+            END IF;
+        END $$;
+    """)
+    cursor.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_topic_stats_pipe_topic ON topic_stats(pipeline_id, topic);
     """)
 
     # 3. Weekly Reports table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS weekly_reports (
             week_id VARCHAR(50) PRIMARY KEY,
+            pipeline_id VARCHAR(50) DEFAULT 'mppsc_default',
             start_date DATE,
             end_date DATE,
             tests_assigned INTEGER DEFAULT 0,
@@ -66,15 +94,18 @@ def init_and_migrate_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
     """)
+    cursor.execute("""
+        ALTER TABLE weekly_reports ADD COLUMN IF NOT EXISTS pipeline_id VARCHAR(50) DEFAULT 'mppsc_default';
+    """)
 
     conn.commit()
     cursor.close()
     conn.close()
 
-def mark_expired_tests_absent():
+def mark_expired_tests_absent(pipeline_id="mppsc_default"):
     """
     Finds any unsubmitted tests from past dates (test_date < today)
-    that are still 'PENDING' and marks them as 'ABSENT' with score 0.
+    that are still 'PENDING' for the given pipeline_id and marks them as 'ABSENT' with score 0.
     """
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -87,18 +118,19 @@ def mark_expired_tests_absent():
             percentage = 0.0,
             evaluated_at = CURRENT_TIMESTAMP
         WHERE test_date < CURRENT_DATE
+          AND pipeline_id = %s
           AND evaluated = FALSE
           AND (status = 'PENDING' OR status IS NULL);
-    """)
+    """, (pipeline_id,))
     absent_count = cursor.rowcount
     conn.commit()
     cursor.close()
     conn.close()
     return absent_count
 
-def get_previous_test_data(current_date=None):
+def get_previous_test_data(current_date=None, pipeline_id="mppsc_default"):
     """
-    Retrieves the most recent prior test record from daily_tests
+    Retrieves the most recent prior test record for a specific pipeline_id from daily_tests
     (i.e., test_date < current_date or CURRENT_DATE).
     Returns dict or None.
     """
@@ -110,19 +142,19 @@ def get_previous_test_data(current_date=None):
             SELECT test_date, topics, status, score, total_questions, 
                    percentage, questions_json, user_answers_json, breakdown_json
             FROM daily_tests
-            WHERE test_date < %s
+            WHERE test_date < %s AND pipeline_id = %s
             ORDER BY test_date DESC
             LIMIT 1;
-        """, (current_date,))
+        """, (current_date, pipeline_id))
     else:
         cursor.execute("""
             SELECT test_date, topics, status, score, total_questions, 
                    percentage, questions_json, user_answers_json, breakdown_json
             FROM daily_tests
-            WHERE test_date < CURRENT_DATE
+            WHERE test_date < CURRENT_DATE AND pipeline_id = %s
             ORDER BY test_date DESC
             LIMIT 1;
-        """)
+        """, (pipeline_id,))
     
     row = cursor.fetchone()
     cursor.close()

@@ -29,6 +29,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PIPELINES_JSON: ${{ secrets.PIPELINES_JSON || vars.PIPELINES_JSON }}
           LLM_PROVIDER: ${{ secrets.LLM_PROVIDER || vars.LLM_PROVIDER }}
           GEMINI_MODEL: ${{ secrets.GEMINI_MODEL || vars.GEMINI_MODEL }}
           GROQ_MODEL: ${{ secrets.GROQ_MODEL || vars.GROQ_MODEL }}

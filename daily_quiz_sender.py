@@ -1,3 +1,7 @@
+import sys
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
 import io
 import json
 import time
@@ -22,15 +26,22 @@ from config import (
     TOPICS,
     QUESTIONS_PER_TOPIC,
     get_quiz_prompt,
+    get_pipeline_configs,
+    get_quiz_prompt_for_pipeline,
     validate_config,
 )
 from db import get_db_connection, init_and_migrate_db, mark_expired_tests_absent
 from alert_utils import send_error_alert, generate_ai_completion, clean_ai_json_output
 
-def generate_questions():
-    prompt = get_quiz_prompt()
-    topic_desc = TOPICS if TOPICS else "General MPPSC Mix"
-    print(f"[2/4] Generating questions with AI for: {topic_desc}...")
+import sys
+import argparse
+
+def generate_questions_for_pipeline(pipe_cfg):
+    prompt = get_quiz_prompt_for_pipeline(pipe_cfg)
+    exam_name = pipe_cfg.get("exam_name", "Competitive Exam")
+    topic_desc = pipe_cfg.get("topics") or f"General {exam_name} Mix"
+    student_name = pipe_cfg.get("student_name", "Candidate")
+    print(f"   Generating questions with AI for {student_name} ({exam_name} - {topic_desc})...")
     
     raw_response = generate_ai_completion(
         prompt=prompt,
@@ -38,10 +49,10 @@ def generate_questions():
     )
     cleaned_json = clean_ai_json_output(raw_response)
     questions = json.loads(cleaned_json)
-    print(f"      Generated {len(questions)} questions successfully.")
+    print(f"   Generated {len(questions)} questions successfully.")
     return questions
 
-def build_quiz_pdf_bytes(date_str, topic_desc, questions):
+def build_quiz_pdf_bytes(date_str, topic_desc, questions, exam_name="MPPSC"):
     """Generates a clean PDF document containing Daily Quiz questions."""
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -110,7 +121,7 @@ def build_quiz_pdf_bytes(date_str, topic_desc, questions):
     elements = []
 
     # Title & Header
-    elements.append(Paragraph(f"🎯 MPPSC Daily Prelims Drill - {date_str}", title_style))
+    elements.append(Paragraph(f"🎯 {exam_name} Daily Drill - {date_str}", title_style))
     elements.append(Paragraph(f"Focus: {topic_desc} &bull; Total Questions: {len(questions)}", subtitle_style))
     
     # Submission Tip Banner
@@ -168,14 +179,15 @@ def build_quiz_pdf_bytes(date_str, topic_desc, questions):
     buffer.seek(0)
     return buffer.getvalue()
 
-def create_html_email(date_str, questions, topic_desc):
-    filename = f"MPPSC_Daily_Drill_{date_str}.pdf"
+def create_html_email(date_str, questions, topic_desc, exam_name="MPPSC", student_name="Candidate"):
+    clean_exam_name = exam_name.replace(" ", "_")
+    filename = f"{clean_exam_name}_Daily_Drill_{date_str}.pdf"
     html = f"""
     <html>
     <body style="font-family: Arial, sans-serif; background-color: #f7fafc; padding: 20px; color: #2d3748;">
         <div style="max-width: 600px; margin: 0 auto; background: #fff; padding: 25px; border-radius: 8px; border: 1px solid #e2e8f0;">
             <div style="border-bottom: 2px solid #3182ce; padding-bottom: 10px; margin-bottom: 20px;">
-                <h2 style="color: #2b6cb0; margin: 0;">🎯 MPPSC Daily Prelims Drill</h2>
+                <h2 style="color: #2b6cb0; margin: 0;">🎯 {exam_name} Daily Drill - Hello {student_name}!</h2>
                 <p style="color: #718096; margin: 5px 0 0 0;">Date: {date_str} &bull; {len(questions)} Questions &bull; Focus: {topic_desc}</p>
             </div>
 
@@ -192,12 +204,12 @@ def create_html_email(date_str, questions, topic_desc):
     """
     return html
 
-def send_email(subject, html_content, pdf_bytes, filename):
-    print(f"[4/4] Sending quiz email to {RECEIVER_EMAIL}...")
+def send_email(subject, html_content, pdf_bytes, filename, receiver_email):
+    print(f"   Sending quiz email to {receiver_email}...")
     msg = MIMEMultipart()
     msg["Subject"] = subject
     msg["From"] = SENDER_EMAIL
-    msg["To"] = RECEIVER_EMAIL
+    msg["To"] = receiver_email
 
     msg.attach(MIMEText(html_content, "html"))
 
@@ -206,14 +218,13 @@ def send_email(subject, html_content, pdf_bytes, filename):
         pdf_attachment.add_header("Content-Disposition", "attachment", filename=filename)
         msg.attach(pdf_attachment)
 
-    # Retry logic for SMTP STARTTLS connection
     max_retries = 3
     for attempt in range(1, max_retries + 1):
         try:
             with smtplib.SMTP("smtp.gmail.com", 587, timeout=30) as server:
                 server.starttls()
                 server.login(SENDER_EMAIL, APP_PASSWORD)
-                server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
+                server.sendmail(SENDER_EMAIL, receiver_email, msg.as_string())
             print("      Email sent successfully!")
             return
         except Exception as smtp_err:
@@ -222,51 +233,80 @@ def send_email(subject, html_content, pdf_bytes, filename):
                 raise smtp_err
             time.sleep(3)
 
-def main():
-    try:
-        validate_config(["SENDER_EMAIL", "APP_PASSWORD", "RECEIVER_EMAIL", "GEMINI_API_KEY", "DATABASE_URL"])
+def run_pipeline_daily_quiz(pipe_cfg):
+    pipeline_id = pipe_cfg.get("pipeline_id", "mppsc_default")
+    student_name = pipe_cfg.get("student_name", "Candidate")
+    receiver_email = pipe_cfg.get("receiver_email")
+    exam_name = pipe_cfg.get("exam_name", "MPPSC")
+    topic_desc = pipe_cfg.get("topics") or f"General {exam_name} Mix"
 
-        # 1. Initialize & migrate DB schema
+    if not receiver_email:
+        print(f"[SKIP] No receiver_email configured for pipeline: {pipeline_id}")
+        return
+
+    print(f"\n=======================================================")
+    print(f"🚀 Running Daily Quiz Pipeline: [{pipeline_id}] for {student_name} ({exam_name})")
+    print(f"=======================================================")
+
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    test_id = f"{pipeline_id.upper()}_{today_str}"
+
+    # 1. Generate questions for this specific pipeline
+    questions = generate_questions_for_pipeline(pipe_cfg)
+
+    # 2. Build PDF document
+    clean_exam_name = exam_name.replace(" ", "_")
+    pdf_filename = f"{clean_exam_name}_Daily_Drill_{today_str}.pdf"
+    pdf_bytes = build_quiz_pdf_bytes(today_str, topic_desc, questions, exam_name=exam_name)
+
+    # 3. Save to database with pipeline_id
+    print("   Saving questions to database...")
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO daily_tests (test_id, pipeline_id, test_date, topics, questions_json, evaluated, status, total_questions)
+        VALUES (%s, %s, %s, %s, %s, FALSE, 'PENDING', %s)
+        ON CONFLICT (pipeline_id, test_date) DO UPDATE SET 
+            topics = EXCLUDED.topics,
+            questions_json = EXCLUDED.questions_json,
+            total_questions = EXCLUDED.total_questions,
+            status = 'PENDING';
+    """, (test_id, pipeline_id, today_str, topic_desc, json.dumps(questions), len(questions)))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    print(f"   Saved to daily_tests table as PENDING for pipeline [{pipeline_id}].")
+
+    # 4. Dispatch Email
+    subject = f"🎯 [{exam_name}] Daily Drill - {today_str}"
+    html_body = create_html_email(today_str, questions, topic_desc, exam_name=exam_name, student_name=student_name)
+    send_email(subject, html_body, pdf_bytes, pdf_filename, receiver_email)
+    print(f"[OK] Daily Quiz for {student_name} ({exam_name}) sent and recorded successfully!")
+
+def main():
+    parser = argparse.ArgumentParser(description="Send Daily Quiz across student pipelines.")
+    parser.add_argument("--pipeline", type=str, help="Specific pipeline_id to run (e.g. ctet_swati or mppsc_default)")
+    args = parser.parse_args()
+
+    try:
+        validate_config(["SENDER_EMAIL", "APP_PASSWORD", "DATABASE_URL"])
+
         print("[1/4] Initializing PostgreSQL database tables & checking pending tests...")
         init_and_migrate_db()
-        absents = mark_expired_tests_absent()
-        if absents > 0:
-            print(f"      Marked {absents} previous unreplied test(s) as ABSENT.")
 
-        today_str = datetime.now().strftime("%Y-%m-%d")
-        test_id = f"MPPSC_{today_str}"
-        topic_desc = TOPICS if TOPICS else "General MPPSC Mix"
+        active_pipelines = get_pipeline_configs(only_enabled=True)
+        if args.pipeline:
+            active_pipelines = [p for p in active_pipelines if p.get("pipeline_id") == args.pipeline]
 
-        # 2. Generate questions via Gemini
-        questions = generate_questions()
+        if not active_pipelines:
+            print("No active pipelines configured to run.")
+            return
 
-        # 3. Build PDF document
-        pdf_filename = f"MPPSC_Daily_Drill_{today_str}.pdf"
-        pdf_bytes = build_quiz_pdf_bytes(today_str, topic_desc, questions)
+        for pipe_cfg in active_pipelines:
+            mark_expired_tests_absent(pipe_cfg.get("pipeline_id", "mppsc_default"))
+            run_pipeline_daily_quiz(pipe_cfg)
 
-        # 4. Save to database
-        print("[3/4] Saving questions to database...")
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO daily_tests (test_id, test_date, topics, questions_json, evaluated, status, total_questions)
-            VALUES (%s, %s, %s, %s, FALSE, 'PENDING', %s)
-            ON CONFLICT (test_date) DO UPDATE SET 
-                topics = EXCLUDED.topics,
-                questions_json = EXCLUDED.questions_json,
-                total_questions = EXCLUDED.total_questions,
-                status = 'PENDING';
-        """, (test_id, today_str, topic_desc, json.dumps(questions), len(questions)))
-        conn.commit()
-        cursor.close()
-        conn.close()
-        print("      Saved to daily_tests table as PENDING.")
-
-        # 5. Dispatch Email
-        subject = f"🎯 MPPSC Daily Prelims Drill - {today_str}"
-        html_body = create_html_email(today_str, questions, topic_desc)
-        send_email(subject, html_body, pdf_bytes, pdf_filename)
-        print(f"\n[OK] MPPSC Daily Quiz for {today_str} sent and recorded successfully!\n")
+        print("\n🎉 [ALL COMPLETED] Daily Quiz execution finished for all active pipelines!\n")
 
     except Exception as e:
         print(f"\n[ERROR] Failed to send daily quiz: {e}\n")
