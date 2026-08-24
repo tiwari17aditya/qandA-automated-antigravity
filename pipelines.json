@@ -1,5 +1,15 @@
 [
   {
+    "pipeline_id": "mppsc_default",
+    "student_name": "Aditya",
+    "receiver_email": "addytiwari3@gmail.com",
+    "exam_name": "MPPSC Prelims",
+    "topics": "Indus Valley Civilization, computer or ICT",
+    "total_questions": 15,
+    "language": "english",
+    "enabled": true
+  },
+  {
     "pipeline_id": "ctet_swati",
     "student_name": "Swati",
     "receiver_email": "kamlaswati@gmail.com",
