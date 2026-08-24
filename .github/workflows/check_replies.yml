@@ -1,8 +1,8 @@
-name: 2. Check Reply & Auto-Evaluate (Every 8 Hours)
+name: 2. Check Reply & Auto-Evaluate (11 AM, 3 PM, 7 PM, 11 PM IST)
 
 on:
   schedule:
-    - cron: '30 2,10,18 * * *' # 08:00 AM, 04:00 PM, 12:00 AM IST
+    - cron: '30 5,9,13,17 * * *' # 11:00 AM, 03:00 PM, 07:00 PM, 11:00 PM IST
   workflow_dispatch:
     inputs:
       pipeline_id:
