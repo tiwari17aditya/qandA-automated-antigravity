@@ -33,15 +33,21 @@ from config import (
 from db import get_db_connection, init_and_migrate_db, mark_expired_tests_absent
 from alert_utils import send_error_alert, generate_ai_completion, clean_ai_json_output
 
+from logger_utils import get_pipeline_logger
+import os
 import sys
 import argparse
 
-def generate_questions_for_pipeline(pipe_cfg):
+def generate_questions_for_pipeline(pipe_cfg, logger=None):
+    pipeline_id = pipe_cfg.get("pipeline_id", "mppsc_default")
+    if logger is None:
+        logger = get_pipeline_logger("daily_quiz", pipeline_id)
+        
     prompt = get_quiz_prompt_for_pipeline(pipe_cfg)
     exam_name = pipe_cfg.get("exam_name", "Competitive Exam")
     topic_desc = pipe_cfg.get("topics") or f"General {exam_name} Mix"
     student_name = pipe_cfg.get("student_name", "Candidate")
-    print(f"   Generating questions with AI for {student_name} ({exam_name} - {topic_desc})...")
+    logger.info(f"Generating questions with AI for {student_name} ({exam_name} - {topic_desc})...")
     
     raw_response = generate_ai_completion(
         prompt=prompt,
@@ -61,7 +67,24 @@ def generate_questions_for_pipeline(pipe_cfg):
                     break
     if not isinstance(questions, list):
         raise ValueError("AI response did not return a valid list of questions.")
-    print(f"   Generated {len(questions)} questions successfully.")
+        
+    # Ensure fallback unified question/options keys for bilingual items if missing
+    for q in questions:
+        if "question" not in q:
+            q_en = q.get("question_en", "")
+            q_hi = q.get("question_hi", "")
+            q["question"] = f"{q_en}\n({q_hi})" if q_en and q_hi else (q_en or q_hi)
+        if "options" not in q:
+            opts_en = q.get("options_en", {})
+            opts_hi = q.get("options_hi", {})
+            unified_opts = {}
+            for k in ["A", "B", "C", "D"]:
+                val_en = opts_en.get(k, "")
+                val_hi = opts_hi.get(k, "")
+                unified_opts[k] = f"{val_en} / {val_hi}" if val_en and val_hi else (val_en or val_hi)
+            q["options"] = unified_opts
+
+    logger.info(f"Generated {len(questions)} questions successfully.")
     return questions
 
 from pdf_font_utils import register_unicode_fonts
@@ -125,7 +148,7 @@ def build_quiz_pdf_bytes(date_str, topic_desc, questions, exam_name="MPPSC"):
         fontSize=10.5,
         leading=14,
         textColor=HexColor('#1A202C'),
-        spaceAfter=6
+        spaceAfter=4
     )
     q_text_dev = ParagraphStyle(
         'QTextDev',
@@ -133,7 +156,7 @@ def build_quiz_pdf_bytes(date_str, topic_desc, questions, exam_name="MPPSC"):
         fontName=font_bold,
         fontSize=10.5,
         leading=14,
-        textColor=HexColor('#1A202C'),
+        textColor=HexColor('#2D3748'),
         spaceAfter=6
     )
     opt_eng = ParagraphStyle(
@@ -155,7 +178,7 @@ def build_quiz_pdf_bytes(date_str, topic_desc, questions, exam_name="MPPSC"):
 
     elements = []
 
-    # Title & Header (English rendering for titles, metadata, submission banner)
+    # Title & Header
     elements.append(Paragraph(f"🎯 {exam_name} Daily Drill - {date_str}", title_style))
     elements.append(Paragraph(f"Focus: {topic_desc} &bull; Total Questions: {len(questions)}", subtitle_style))
     
@@ -177,26 +200,40 @@ def build_quiz_pdf_bytes(date_str, topic_desc, questions, exam_name="MPPSC"):
     for q in questions:
         q_num = q.get('q_num', 1)
         topic = q.get('topic', 'General')
+        
+        q_en = q.get('question_en', '')
+        q_hi = q.get('question_hi', '')
         q_text = q.get('question', '')
+        
+        options_en = q.get('options_en', {})
+        options_hi = q.get('options_hi', {})
         options = q.get('options', {})
-
-        # Question Text Paragraph (selects Devanagari or English font)
-        if is_hindi_text(q_text):
-            q_paragraph = Paragraph(q_text, q_text_dev)
-        else:
-            q_paragraph = Paragraph(q_text, q_text_eng)
 
         q_elements = [
             Paragraph(f"Q{q_num}. [{topic}]", q_header_style),
             Spacer(1, 3),
-            q_paragraph,
-            Spacer(1, 4)
         ]
+
+        if q_en and q_hi:
+            q_elements.append(Paragraph(q_en, q_text_eng))
+            q_elements.append(Paragraph(f"<b>(हिंदी)</b> {q_hi}", q_text_dev))
+        else:
+            if is_hindi_text(q_text):
+                q_elements.append(Paragraph(q_text, q_text_dev))
+            else:
+                q_elements.append(Paragraph(q_text, q_text_eng))
+
+        q_elements.append(Spacer(1, 4))
 
         opt_rows = []
         for opt_key in ['A', 'B', 'C', 'D']:
+            val_en = options_en.get(opt_key, '')
+            val_hi = options_hi.get(opt_key, '')
             opt_val = options.get(opt_key, '')
-            if is_hindi_text(opt_val):
+
+            if val_en and val_hi:
+                opt_paragraph = Paragraph(f'<b>({opt_key})</b> {val_en}<br/>&nbsp;&nbsp;&nbsp;&nbsp;<font name="{font_reg}"><i>{val_hi}</i></font>', opt_eng)
+            elif is_hindi_text(opt_val):
                 opt_paragraph = Paragraph(f'<font name="Helvetica-Bold"><b>({opt_key})</b></font> {opt_val}', opt_dev)
             else:
                 opt_paragraph = Paragraph(f'<b>({opt_key})</b> {opt_val}', opt_eng)
@@ -249,8 +286,12 @@ def create_html_email(date_str, questions, topic_desc, exam_name="MPPSC", studen
     """
     return html
 
-def send_email(subject, html_content, pdf_bytes, filename, receiver_email):
-    print(f"   Sending quiz email to {receiver_email}...")
+def send_email(subject, html_content, pdf_bytes, filename, receiver_email, logger=None):
+    if logger:
+        logger.info(f"Sending quiz email to {receiver_email}...")
+    else:
+        print(f"   Sending quiz email to {receiver_email}...")
+
     msg = MIMEMultipart()
     msg["Subject"] = subject
     msg["From"] = SENDER_EMAIL
@@ -270,42 +311,57 @@ def send_email(subject, html_content, pdf_bytes, filename, receiver_email):
                 server.starttls()
                 server.login(SENDER_EMAIL, APP_PASSWORD)
                 server.sendmail(SENDER_EMAIL, receiver_email, msg.as_string())
-            print("      Email sent successfully!")
+            if logger:
+                logger.info("Email sent successfully!")
+            else:
+                print("      Email sent successfully!")
             return
         except Exception as smtp_err:
-            print(f"      [WARN] SMTP Attempt {attempt}/{max_retries} failed: {smtp_err}")
+            if logger:
+                logger.warning(f"SMTP Attempt {attempt}/{max_retries} failed: {smtp_err}")
+            else:
+                print(f"      [WARN] SMTP Attempt {attempt}/{max_retries} failed: {smtp_err}")
             if attempt == max_retries:
                 raise smtp_err
             time.sleep(3)
 
-def run_pipeline_daily_quiz(pipe_cfg):
+def run_pipeline_daily_quiz(pipe_cfg, dry_run=False):
     pipeline_id = pipe_cfg.get("pipeline_id", "mppsc_default")
     student_name = pipe_cfg.get("student_name", "Candidate")
     receiver_email = pipe_cfg.get("receiver_email")
     exam_name = pipe_cfg.get("exam_name", "MPPSC")
     topic_desc = pipe_cfg.get("topics") or f"General {exam_name} Mix"
 
+    logger = get_pipeline_logger("daily_quiz", pipeline_id)
+
     if not receiver_email:
-        print(f"[SKIP] No receiver_email configured for pipeline: {pipeline_id}")
+        logger.warning(f"No receiver_email configured for pipeline: {pipeline_id}. Skipping.")
         return
 
-    print(f"\n=======================================================")
-    print(f"🚀 Running Daily Quiz Pipeline: [{pipeline_id}] for {student_name} ({exam_name})")
-    print(f"=======================================================")
+    logger.info(f"Running Daily Quiz Pipeline for {student_name} ({exam_name}) [Dry-Run: {dry_run}]")
 
     today_str = datetime.now().strftime("%Y-%m-%d")
     test_id = f"{pipeline_id.upper()}_{today_str}"
 
     # 1. Generate questions for this specific pipeline
-    questions = generate_questions_for_pipeline(pipe_cfg)
+    questions = generate_questions_for_pipeline(pipe_cfg, logger=logger)
 
     # 2. Build PDF document
     clean_exam_name = exam_name.replace(" ", "_")
     pdf_filename = f"{clean_exam_name}_Daily_Drill_{today_str}.pdf"
     pdf_bytes = build_quiz_pdf_bytes(today_str, topic_desc, questions, exam_name=exam_name)
 
+    if dry_run:
+        logs_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+        os.makedirs(logs_dir, exist_ok=True)
+        out_pdf_path = os.path.join(logs_dir, f"dryrun_{pipeline_id}_{pdf_filename}")
+        with open(out_pdf_path, "wb") as f:
+            f.write(pdf_bytes)
+        logger.info(f"[DRY-RUN COMPLETE] Generated {len(questions)} questions & saved test PDF locally to: {out_pdf_path}. (Zero DB modifications, Zero emails sent)")
+        return
+
     # 3. Save to database with pipeline_id
-    print("   Saving questions to database...")
+    logger.info("Saving questions to database...")
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("""
@@ -320,42 +376,50 @@ def run_pipeline_daily_quiz(pipe_cfg):
     conn.commit()
     cursor.close()
     conn.close()
-    print(f"   Saved to daily_tests table as PENDING for pipeline [{pipeline_id}].")
+    logger.info(f"Saved to daily_tests table as PENDING for pipeline [{pipeline_id}].")
 
     # 4. Dispatch Email
     subject = f"🎯 [{exam_name}] Daily Drill - {today_str}"
     html_body = create_html_email(today_str, questions, topic_desc, exam_name=exam_name, student_name=student_name)
-    send_email(subject, html_body, pdf_bytes, pdf_filename, receiver_email)
-    print(f"[OK] Daily Quiz for {student_name} ({exam_name}) sent and recorded successfully!")
+    send_email(subject, html_body, pdf_bytes, pdf_filename, receiver_email, logger=logger)
+    logger.info(f"Daily Quiz for {student_name} ({exam_name}) sent and recorded successfully!")
 
 def main():
     parser = argparse.ArgumentParser(description="Send Daily Quiz across student pipelines.")
     parser.add_argument("--pipeline", type=str, help="Specific pipeline_id to run (e.g. ctet_swati or mppsc_default)")
+    parser.add_argument("--dry-run", action="store_true", help="Safe dry-run testing mode (No DB updates, No emails sent)")
     args = parser.parse_args()
 
-    try:
-        validate_config(["SENDER_EMAIL", "APP_PASSWORD", "DATABASE_URL"])
+    global_logger = get_pipeline_logger("daily_quiz", "system")
 
-        print("[1/4] Initializing PostgreSQL database tables & checking pending tests...")
-        init_and_migrate_db()
+    try:
+        if not args.dry_run:
+            validate_config(["SENDER_EMAIL", "APP_PASSWORD", "DATABASE_URL"])
+            global_logger.info("Initializing PostgreSQL database tables & checking pending tests...")
+            init_and_migrate_db()
+        else:
+            global_logger.info("[SAFE DRY-RUN MODE] Skipping live DB init & mandatory credential checks.")
 
         active_pipelines = get_pipeline_configs(only_enabled=True)
         if args.pipeline:
             active_pipelines = [p for p in active_pipelines if p.get("pipeline_id") == args.pipeline]
 
         if not active_pipelines:
-            print("No active pipelines configured to run.")
+            global_logger.warning("No active pipelines configured to run.")
             return
 
         for pipe_cfg in active_pipelines:
-            mark_expired_tests_absent(pipe_cfg.get("pipeline_id", "mppsc_default"))
-            run_pipeline_daily_quiz(pipe_cfg)
+            pipe_id = pipe_cfg.get("pipeline_id", "mppsc_default")
+            if not args.dry_run:
+                mark_expired_tests_absent(pipe_id)
+            run_pipeline_daily_quiz(pipe_cfg, dry_run=args.dry_run)
 
-        print("\n🎉 [ALL COMPLETED] Daily Quiz execution finished for all active pipelines!\n")
+        global_logger.info("Daily Quiz execution finished for all target pipelines!")
 
     except Exception as e:
-        print(f"\n[ERROR] Failed to send daily quiz: {e}\n")
-        send_error_alert("Daily Quiz Sender (daily_quiz_sender.py)", e)
+        global_logger.error(f"Failed to send daily quiz: {e}")
+        if not args.dry_run:
+            send_error_alert("Daily Quiz Sender (daily_quiz_sender.py)", e)
         raise e
 
 if __name__ == "__main__":

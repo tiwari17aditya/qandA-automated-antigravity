@@ -51,3 +51,10 @@ jobs:
           else
             python -B daily_quiz_sender.py
           fi
+      - name: Upload Separate Pipeline Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-quiz-pipeline-logs
+          path: logs/
+          if-no-files-found: ignore

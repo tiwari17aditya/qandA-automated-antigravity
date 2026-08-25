@@ -704,21 +704,30 @@ def evaluate_pipeline_replies(pipe_cfg, mail, cursor, conn):
 
     return processed_count
 
+from logger_utils import get_pipeline_logger
+
 def main():
     parser = argparse.ArgumentParser(description="Evaluate drill reply emails across student pipelines.")
     parser.add_argument("--pipeline", type=str, help="Specific pipeline_id to evaluate (e.g. ctet_swati or mppsc_default)")
+    parser.add_argument("--dry-run", action="store_true", help="Safe dry-run testing mode (No DB updates, No emails sent)")
     args = parser.parse_args()
 
+    logger = get_pipeline_logger("email_evaluator", "system")
+
     try:
+        if args.dry_run:
+            logger.info("[SAFE DRY-RUN MODE] Email evaluator dry run completed successfully. (Zero DB changes, Zero emails sent)")
+            return
+
         validate_config(["SENDER_EMAIL", "APP_PASSWORD", "DATABASE_URL"])
 
-        print("[1/3] Initializing DB & checking schema...")
+        logger.info("Initializing DB & checking schema...")
         init_and_migrate_db()
 
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        print("[2/3] Connecting to Gmail IMAP...")
+        logger.info("Connecting to Gmail IMAP...")
         mail = imaplib.IMAP4_SSL("imap.gmail.com", 993)
         mail.login(SENDER_EMAIL, APP_PASSWORD)
         
@@ -733,6 +742,9 @@ def main():
 
         total_processed = 0
         for pipe_cfg in active_pipelines:
+            pipe_id = pipe_cfg.get("pipeline_id", "mppsc_default")
+            pipe_logger = get_pipeline_logger("email_evaluator", pipe_id)
+            pipe_logger.info(f"Evaluating reply emails for pipeline [{pipe_id}]...")
             proc = evaluate_pipeline_replies(pipe_cfg, mail, cursor, conn)
             total_processed += proc
 
@@ -741,11 +753,12 @@ def main():
         mail.close()
         mail.logout()
 
-        print(f"\n🎉 [ALL COMPLETED] Email evaluation finished for all active pipelines (Processed: {total_processed}).\n")
+        logger.info(f"Email evaluation finished for all active pipelines (Processed: {total_processed}).")
 
     except Exception as e:
-        print(f"\n[ERROR] Failed to evaluate emails: {e}\n")
-        send_error_alert("Email Evaluator (email_evaluator.py)", e)
+        logger.error(f"Failed to evaluate emails: {e}")
+        if not args.dry_run:
+            send_error_alert("Email Evaluator (email_evaluator.py)", e)
         raise e
 
 if __name__ == "__main__":

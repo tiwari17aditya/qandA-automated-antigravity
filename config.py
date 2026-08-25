@@ -56,8 +56,8 @@ DATABASE_URL = _get_str_env("DATABASE_URL", "")
 LLM_PROVIDER = _get_str_env("LLM_PROVIDER", "gemini").lower()
 
 # Model used for question generation (e.g. gemini-2.5-flash, deepseek-r1-distill-llama-70b, qwen-2.5-32b)
-GEMINI_MODEL = _get_str_env("GEMINI_MODEL", "gemini-3.6-flash")
-GROQ_MODEL = _get_str_env("GROQ_MODEL", "qwen/qwen3.6-27b")
+GEMINI_MODEL = _get_str_env("GEMINI_MODEL", "gemini-2.5-flash")
+GROQ_MODEL = _get_str_env("GROQ_MODEL", "qwen-2.5-32b")
 
 # Specific topics separated by comma (e.g. "Indus Valley Civilization (IVC), ICT")
 # If left blank, general MPPSC Prelims syllabus mix is used.
@@ -129,26 +129,53 @@ def get_pipeline_configs(only_enabled=True):
     return pipelines
 
 def get_quiz_prompt_for_pipeline(pipeline_cfg):
-    """Builds dynamic token-optimized prompt tailored to exam name, topics, question count, and language medium."""
+    """Builds dynamic token-optimized prompt tailored to exam name, topics, question count, and language medium (including bilingual English+Hindi)."""
     exam_name = pipeline_cfg.get("exam_name", "Competitive Exam")
     topics_str = pipeline_cfg.get("topics", "")
     q_per_topic = pipeline_cfg.get("questions_per_topic", QUESTIONS_PER_TOPIC)
     
     lang = pipeline_cfg.get("language", "english").lower()
     
-    lang_rule = ""
-    if lang == "hindi":
-        lang_rule = "IMPORTANT: Write ALL questions, options (A, B, C, D), and explanations in clear Devanagari Hindi (हिन्दी भाषा)."
+    is_bilingual = lang in ["bilingual", "bilingual_en_hi", "english_hindi"]
+    
+    if is_bilingual:
+        token_opt_rule = "IMPORTANT BILINGUAL REQUIREMENT: Provide EVERY question, option set (A, B, C, D), and explanation in BOTH English AND Devanagari Hindi (हिन्दी भाषा), exactly as in real exam question papers. Keep explanations ultra-concise (max 15 words each language). Output pure JSON array only."
+    elif lang == "hindi":
+        token_opt_rule = "IMPORTANT: Write ALL questions, options (A, B, C, D), and explanations in clear Devanagari Hindi (हिन्दी भाषा). Keep explanation ultra-concise (max 15 words). Output pure JSON array only."
     else:
-        lang_rule = "Write questions, options, and explanations in English."
-
-    token_opt_rule = f"Constraints: Keep questions crisp. Keep explanation ultra-concise (max 15 words). Output pure JSON array only. {lang_rule}"
+        token_opt_rule = "Write questions, options, and explanations in English. Keep explanation ultra-concise (max 15 words). Output pure JSON array only."
 
     if topics_str:
         topic_list = [t.strip() for t in topics_str.split(",") if t.strip()]
         total_q = len(topic_list) * q_per_topic
         topic_bullets = "\n".join([f"- {t}: EXACTLY {q_per_topic} questions" for t in topic_list])
         
+        if is_bilingual:
+            json_schema_example = f"""[
+  {{
+    "q_num": 1,
+    "topic": "{topic_list[0]}",
+    "question_en": "English question text strictly on this topic?",
+    "question_hi": "हिंदी में प्रश्न पाठ?",
+    "options_en": {{"A": "English Opt A", "B": "English Opt B", "C": "English Opt C", "D": "English Opt D"}},
+    "options_hi": {{"A": "हिंदी विकल्प A", "B": "हिंदी विकल्प B", "C": "हिंदी विकल्प C", "D": "हिंदी विकल्प D"}},
+    "correct_option": "A",
+    "explanation_en": "Brief English context (<=15 words).",
+    "explanation_hi": "संक्षिप्त हिंदी स्पष्टीकरण (<=15 words)."
+  }}
+]"""
+        else:
+            json_schema_example = f"""[
+  {{
+    "q_num": 1,
+    "topic": "{topic_list[0]}",
+    "question": "Question text strictly on this topic?",
+    "options": {{"A": "...", "B": "...", "C": "...", "D": "..."}},
+    "correct_option": "A",
+    "explanation": "Brief context/fact (<=15 words)."
+  }}
+]"""
+
         return f"""
 Generate exactly {total_q} Multiple Choice Questions strictly for {exam_name}.
 CRITICAL REQUIREMENT: Generate EXACTLY {q_per_topic} questions for EACH of the {len(topic_list)} topics below:
@@ -159,26 +186,26 @@ Each question's 'topic' field MUST be set to the exact matching topic name from 
 {token_opt_rule}
 
 Return ONLY valid JSON matching this schema:
-[
-  {{
-    "q_num": 1,
-    "topic": "{topic_list[0]}",
-    "question": "Question text strictly on this topic?",
-    "options": {{"A": "...", "B": "...", "C": "...", "D": "..."}},
-    "correct_option": "A",
-    "explanation": "Brief context/fact (<=15 words)."
-  }}
-]
+{json_schema_example}
 """.strip()
     else:
-        return f"""
-Generate exactly {total_q} high-yield Multiple Choice Questions strictly for {exam_name}.
-Ensure questions cover the full core syllabus of {exam_name}.
-
-{token_opt_rule}
-
-Return ONLY valid JSON matching this schema:
-[
+        total_q = pipeline_cfg.get("total_questions", TOTAL_QUESTIONS)
+        if is_bilingual:
+            json_schema_example = f"""[
+  {{
+    "q_num": 1,
+    "topic": "{exam_name} General Practice",
+    "question_en": "English question text?",
+    "question_hi": "हिंदी में प्रश्न पाठ?",
+    "options_en": {{"A": "English Opt A", "B": "English Opt B", "C": "English Opt C", "D": "English Opt D"}},
+    "options_hi": {{"A": "हिंदी विकल्प A", "B": "हिंदी विकल्प B", "C": "हिंदी विकल्प C", "D": "हिंदी विकल्प D"}},
+    "correct_option": "A",
+    "explanation_en": "Brief English context (<=15 words).",
+    "explanation_hi": "संक्षिप्त हिंदी स्पष्टीकरण (<=15 words)."
+  }}
+]"""
+        else:
+            json_schema_example = f"""[
   {{
     "q_num": 1,
     "topic": "{exam_name} General Practice",
@@ -187,7 +214,16 @@ Return ONLY valid JSON matching this schema:
     "correct_option": "A",
     "explanation": "Brief context/fact (<=15 words)."
   }}
-]
+]"""
+
+        return f"""
+Generate exactly {total_q} high-yield Multiple Choice Questions strictly for {exam_name}.
+Ensure questions cover the full core syllabus of {exam_name}.
+
+{token_opt_rule}
+
+Return ONLY valid JSON matching this schema:
+{json_schema_example}
 """.strip()
 
 def get_quiz_prompt():

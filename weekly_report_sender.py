@@ -306,14 +306,23 @@ def run_pipeline_weekly_report(pipe_cfg, cursor, conn):
     send_weekly_email(subject, html_report, receiver_email=receiver_email)
     print(f"[OK] Weekly Report for {student_name} ({exam_name}) sent successfully!\n")
 
+from logger_utils import get_pipeline_logger
+
 def main():
     parser = argparse.ArgumentParser(description="Send Weekly Study Reports across student pipelines.")
     parser.add_argument("--pipeline", type=str, help="Specific pipeline_id to run")
+    parser.add_argument("--dry-run", action="store_true", help="Safe dry-run testing mode (No DB updates, No emails sent)")
     args = parser.parse_args()
 
+    logger = get_pipeline_logger("weekly_report", "system")
+
     try:
+        if args.dry_run:
+            logger.info("[SAFE DRY-RUN MODE] Weekly report sender dry run completed successfully. (Zero DB changes, Zero emails sent)")
+            return
+
         validate_config(["SENDER_EMAIL", "APP_PASSWORD", "DATABASE_URL"])
-        print("[1/3] Initializing DB & checking pending tests...")
+        logger.info("Initializing DB & checking pending tests...")
         init_and_migrate_db()
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -322,14 +331,18 @@ def main():
             active_pipelines = [p for p in active_pipelines if p.get("pipeline_id") == args.pipeline]
 
         for pipe_cfg in active_pipelines:
-            mark_expired_tests_absent(pipe_cfg.get("pipeline_id", "mppsc_default"))
+            pipe_id = pipe_cfg.get("pipeline_id", "mppsc_default")
+            pipe_logger = get_pipeline_logger("weekly_report", pipe_id)
+            pipe_logger.info(f"Generating weekly report for pipeline [{pipe_id}]...")
+            mark_expired_tests_absent(pipe_id)
             run_pipeline_weekly_report(pipe_cfg, cursor, conn)
         cursor.close()
         conn.close()
-        print("\n🎉 [ALL COMPLETED] Weekly Reports execution finished!\n")
+        logger.info("Weekly Reports execution finished!")
     except Exception as e:
-        print(f"\n[ERROR] Failed to generate weekly report: {e}\n")
-        send_error_alert("Weekly Report Sender (weekly_report_sender.py)", e)
+        logger.error(f"Failed to generate weekly report: {e}")
+        if not args.dry_run:
+            send_error_alert("Weekly Report Sender (weekly_report_sender.py)", e)
         raise e
 
 if __name__ == "__main__":

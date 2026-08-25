@@ -14,3 +14,6 @@ env/
 # IDE / Editor folders
 .vscode/
 .idea/
+
+# Local logs and dry-run PDFs
+logs/

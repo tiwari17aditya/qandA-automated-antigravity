@@ -49,3 +49,10 @@ jobs:
           else
             python -B email_evaluator.py
           fi
+      - name: Upload Separate Pipeline Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: email-evaluator-pipeline-logs
+          path: logs/
+          if-no-files-found: ignore
