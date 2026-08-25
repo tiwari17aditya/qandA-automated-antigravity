@@ -14,8 +14,8 @@
     "student_name": "Swati",
     "receiver_email": "kamlaswati@gmail.com",
     "exam_name": "CTET 2026",
-    "topics": "Child Development & Pedagogy, Language I & II Pedagogy, Mathematics & Science, Social Studies",
-    "total_questions": 50,
+    "topics": "Hindi, Child Development, Maths, General Science",
+    "questions_per_topic": 15,
     "language": "bilingual",
     "enabled": true
   }
