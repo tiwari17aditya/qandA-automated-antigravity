@@ -28,7 +28,7 @@ def generate_ai_study_recommendation(summary_data, weak_topics, daily_scores_str
     based on accuracy, consistency, and weak topics using AI completion.
     """
     weak_str = ", ".join([f"{t['topic']} ({t['accuracy']:.0f}%)" for t in weak_topics]) if weak_topics else "None (High Performance!)"
-    lang_instruction = "IMPORTANT: Write the recommendation response in clear Devanagari Hindi (हिन्दी)." if lang.lower() == "hindi" else "Write the response in English."
+    lang_instruction = "IMPORTANT: Write the recommendation response in clear Devanagari Hindi (हिन्दी)." if lang.lower() in ["hindi", "bilingual", "bilingual_en_hi", "english_hindi"] else "Write the response in English."
 
     prompt = f"""
     You are an expert mentor for {exam_name}.
