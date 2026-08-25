@@ -216,7 +216,7 @@ def build_quiz_pdf_bytes(date_str, topic_desc, questions, exam_name="MPPSC"):
 
         if q_en and q_hi:
             q_elements.append(Paragraph(q_en, q_text_eng))
-            q_elements.append(Paragraph(f"<b>(हिंदी)</b> {q_hi}", q_text_dev))
+            q_elements.append(Paragraph(q_hi, q_text_dev))
         else:
             if is_hindi_text(q_text):
                 q_elements.append(Paragraph(q_text, q_text_dev))
