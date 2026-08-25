@@ -314,11 +314,17 @@ def build_eval_pdf_bytes(date_str, score, total_q, breakdown_records):
     for rec in breakdown_records:
         q_num = rec.get('q_num', 1)
         topic = rec.get('topic', 'General')
+        q_en = rec.get('question_en', '')
+        q_hi = rec.get('question_hi', '')
         q_text = rec.get('question', '')
+        options_en = rec.get('options_en', {})
+        options_hi = rec.get('options_hi', {})
         options = rec.get('options', {})
         user_ans = rec.get('user_ans')
         correct_ans = str(rec.get('correct_ans', '')).upper()
         is_correct = rec.get('is_correct', False)
+        exp_en = rec.get('explanation_en', '')
+        exp_hi = rec.get('explanation_hi', '')
         explanation = rec.get('explanation', '')
 
         if user_ans is not None:
@@ -337,46 +343,58 @@ def build_eval_pdf_bytes(date_str, score, total_q, breakdown_records):
             border_color = HexColor('#CBD5E0')
             bg_card = HexColor('#FAFAFA')
 
-        q_paragraph = Paragraph(q_text, q_text_dev) if is_hindi_text(q_text) else Paragraph(q_text, q_text_eng)
-
         card_elements = [
             Paragraph(f"Q{q_num}. [{topic}] &bull; {badge_text}", q_header_style),
             Spacer(1, 4),
-            q_paragraph,
-            Spacer(1, 4)
         ]
+
+        if q_en and q_hi:
+            card_elements.append(Paragraph(q_en, q_text_eng))
+            card_elements.append(Paragraph(q_hi, q_text_dev))
+        else:
+            card_elements.append(Paragraph(q_text, q_text_dev) if is_hindi_text(q_text) else Paragraph(q_text, q_text_eng))
+
+        card_elements.append(Spacer(1, 4))
 
         opt_table_rows = []
         for opt_key in ['A', 'B', 'C', 'D']:
+            val_en = options_en.get(opt_key, '')
+            val_hi = options_hi.get(opt_key, '')
             opt_val = options.get(opt_key, '')
+            
+            if val_en and val_hi:
+                display_opt_val = f"{val_en}<br/>&nbsp;&nbsp;&nbsp;&nbsp;<font name='{font_reg}'><i>{val_hi}</i></font>"
+            else:
+                display_opt_val = opt_val
+
             is_user_choice = (user_ans == opt_key)
             is_right_choice = (correct_ans == opt_key)
 
-            has_hindi_opt = is_hindi_text(opt_val)
+            has_hindi_opt = is_hindi_text(display_opt_val)
 
             if is_user_choice and is_right_choice:
                 cell_bg = HexColor('#C6F6D5')
                 prefix_tag = f'<font name="Helvetica-Bold">✅ <b>({opt_key})</b></font>'
                 suffix_tag = f'<font name="Helvetica-Bold"> &mdash; <i>Your Choice (Correct)</i></font>'
                 style_use = opt_user_correct_dev if has_hindi_opt else opt_user_correct_eng
-                txt = Paragraph(f"{prefix_tag} {opt_val}{suffix_tag}", style_use)
+                txt = Paragraph(f"{prefix_tag} {display_opt_val}{suffix_tag}", style_use)
             elif is_user_choice and not is_right_choice:
                 cell_bg = HexColor('#FED7D7')
                 prefix_tag = f'<font name="Helvetica-Bold">❌ <b>({opt_key})</b></font>'
                 suffix_tag = f'<font name="Helvetica-Bold"> &mdash; <i>Your Choice (Incorrect)</i></font>'
                 style_use = opt_user_wrong_dev if has_hindi_opt else opt_user_wrong_eng
-                txt = Paragraph(f"{prefix_tag} {opt_val}{suffix_tag}", style_use)
+                txt = Paragraph(f"{prefix_tag} {display_opt_val}{suffix_tag}", style_use)
             elif not is_user_choice and is_right_choice:
                 cell_bg = HexColor('#C6F6D5')
                 prefix_tag = f'<font name="Helvetica-Bold">✔️ <b>({opt_key})</b></font>'
                 suffix_tag = f'<font name="Helvetica-Bold"> &mdash; <i>Correct Answer</i></font>'
                 style_use = opt_correct_needed_dev if has_hindi_opt else opt_correct_needed_eng
-                txt = Paragraph(f"{prefix_tag} {opt_val}{suffix_tag}", style_use)
+                txt = Paragraph(f"{prefix_tag} {display_opt_val}{suffix_tag}", style_use)
             else:
                 cell_bg = HexColor('#FFFFFF')
                 prefix_tag = f'<font name="Helvetica-Bold"><b>({opt_key})</b></font>'
                 style_use = opt_normal_dev if has_hindi_opt else opt_normal_eng
-                txt = Paragraph(f"{prefix_tag} {opt_val}", style_use)
+                txt = Paragraph(f"{prefix_tag} {display_opt_val}", style_use)
 
             opt_table_rows.append(([txt], cell_bg))
 
@@ -394,7 +412,12 @@ def build_eval_pdf_bytes(date_str, score, total_q, breakdown_records):
         opt_table.setStyle(TableStyle(t_style))
         card_elements.append(opt_table)
 
-        if explanation:
+        if exp_en and exp_hi:
+            card_elements.append(Spacer(1, 4))
+            exp_prefix = '<font name="Helvetica-Bold">💡 <b>Explanation:</b></font>'
+            card_elements.append(Paragraph(f"{exp_prefix} <i>{exp_en}</i>", exp_eng))
+            card_elements.append(Paragraph(f"<font name='{font_reg}'><i>({exp_hi})</i></font>", exp_dev))
+        elif explanation:
             card_elements.append(Spacer(1, 4))
             exp_prefix = '<font name="Helvetica-Bold">💡 <b>Explanation:</b></font>'
             exp_style_use = exp_dev if is_hindi_text(explanation) else exp_eng
@@ -665,7 +688,13 @@ def evaluate_pipeline_replies(pipe_cfg, mail, cursor, conn):
                 "user_ans": user_ans,
                 "correct_ans": correct_ans,
                 "is_correct": is_correct,
-                "explanation": q.get("explanation", "")
+                "explanation": q.get("explanation", ""),
+                "question_en": q.get("question_en", ""),
+                "question_hi": q.get("question_hi", ""),
+                "options_en": q.get("options_en", {}),
+                "options_hi": q.get("options_hi", {}),
+                "explanation_en": q.get("explanation_en", ""),
+                "explanation_hi": q.get("explanation_hi", "")
             })
 
         pct = (score / len(questions)) * 100.0 if questions else 0.0
