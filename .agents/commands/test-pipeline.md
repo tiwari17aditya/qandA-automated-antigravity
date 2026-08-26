@@ -33,7 +33,13 @@ Execute this command to verify credentials, database connectivity, AI failover c
    python -B -c "import email_evaluator; print('Email evaluator module ready')"
    ```
 
-### Step 5: Clean Bytecode
+### Step 5: Run Automated Unit Test Suite
+1. Run pytest suite covering evaluator parsing and DB guardrails:
+   ```powershell
+   python -m pytest tests/ -v
+   ```
+
+### Step 6: Clean Bytecode
 1. Remove any temporary compiled bytecode:
    ```powershell
    Get-ChildItem -Path . -Include __pycache__ -Recurse -Directory | Remove-Item -Recurse -Force

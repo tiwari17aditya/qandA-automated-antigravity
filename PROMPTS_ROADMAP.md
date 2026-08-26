@@ -8,7 +8,7 @@ This document tracks the prompts and feature enhancements to be implemented step
 
 - [x] **Prompt 1: Fixing the Answer Parser & Whitespace Shift Bug** (`email_evaluator.py`)
 - [x] **Prompt 2: Preventing Question Bank & Drill-Key Mismatch** (`email_evaluator.py`, `db.py`)
-- [ ] **Prompt 3: Unit Test Suite for Pipeline Edge Cases** (`tests/test_evaluator.py`)
+- [x] **Prompt 3: Unit Test Suite for Pipeline Edge Cases** (`tests/test_evaluator.py`)
 
 ---
 
