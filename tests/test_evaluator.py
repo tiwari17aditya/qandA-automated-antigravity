@@ -18,6 +18,44 @@ def test_whitespace_middle_no_shift():
     assert result[44] == "D"   # Q45 is 'D'
     assert result[49] == "B"   # Q50 is 'B'
 
+def test_serial_continuous_stream_case_insensitivity():
+    """
+    Test serial continuous stream in uppercase, lowercase, and mixed case.
+    """
+    questions = [{"id": i} for i in range(10)]
+    
+    # Uppercase
+    res_upper = extract_answers_from_text("ABCDBADCB", questions[:9])
+    assert res_upper == ["A", "B", "C", "D", "B", "A", "D", "C", "B"]
+    
+    # Lowercase
+    res_lower = extract_answers_from_text("abcdbadcb", questions[:9])
+    assert res_lower == ["A", "B", "C", "D", "B", "A", "D", "C", "B"]
+    
+    # Mixed Case
+    res_mixed = extract_answers_from_text("AbdcABDcba", questions)
+    assert res_mixed == ["A", "B", "D", "C", "A", "B", "D", "C", "B", "A"]
+
+def test_topic_block_separators():
+    """
+    Test topic block delimiters (pipe |, slash /, comma ,, space-hyphen-space) for multi-topic drills.
+    """
+    questions = [{"id": i} for i in range(12)]
+    
+    res_pipe = extract_answers_from_text("abcd | bcda | cadb", questions)
+    assert res_pipe == ["A", "B", "C", "D", "B", "C", "D", "A", "C", "A", "D", "B"]
+    
+    res_slash = extract_answers_from_text("abcd / bcda / cadb", questions)
+    assert res_slash == ["A", "B", "C", "D", "B", "C", "D", "A", "C", "A", "D", "B"]
+
+def test_dot_and_underscore_unattempted_markers():
+    """
+    Test dots (.) and underscores (_) as unattempted question markers inside continuous streams.
+    """
+    questions = [{"id": i} for i in range(7)]
+    result = extract_answers_from_text("A.C_D-B", questions)
+    assert result == ["A", None, "C", None, "D", None, "B"]
+
 def test_multiple_consecutive_spaces():
     """
     Test "A  B C" for 6 questions -> indices 1, 2, 4 (Q2, Q3, Q5) marked None.

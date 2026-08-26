@@ -273,12 +273,17 @@ def create_html_email(date_str, questions, topic_desc, exam_name="MPPSC", studen
                 <p style="color: #718096; margin: 5px 0 0 0;">Date: {date_str} &bull; {len(questions)} Questions &bull; Focus: {topic_desc}</p>
             </div>
 
-            <div style="background-color: #ebf8ff; border-left: 4px solid #3182ce; padding: 14px; margin-bottom: 20px; font-size: 14px; line-height: 1.5;">
+            <div style="background-color: #ebf8ff; border-left: 4px solid #3182ce; padding: 14px; margin-bottom: 20px; font-size: 14px; line-height: 1.6;">
                 <strong>📎 Downloadable Quiz PDF Attached!</strong><br>
                 Please open the attached <code>{filename}</code> document to view today's complete set of drill questions and options.
                 <br><br>
-                <strong>📌 Submission Instructions:</strong> Click <strong>Reply</strong> to this email, type your answers in any format (e.g. <code>1A 2C 3B...</code> or <code>CBBBBC...</code> or <code>&lt;Topic&gt; ABCD...</code>), and send!
-                <br><small style="color: #4a5568;">⏰ Please submit before midnight for automated evaluation.</small>
+                <strong>📌 Supported Reply Formats (Uppercase or Lowercase A/a/B/b):</strong>
+                <ul style="margin: 6px 0; padding-left: 20px; color: #2d3748;">
+                    <li><b>Format 1 (Continuous Stream):</b> <code>ABCDBADCB...</code> or <code>abcdbadcb...</code> (use <code>.</code> or <code>_</code> for unattempted)</li>
+                    <li><b>Format 2 (Numbered Format):</b> <code>1A 2C 3A 4B...</code> or <code>1.a 2.c 3.b...</code></li>
+                    <li><b>Format 3 (Topic-Separated Blocks):</b> <code>abcd | bcda | cadb</code> (use <code>|</code>, <code>/</code>, or <code>,</code> between topics)</li>
+                </ul>
+                <small style="color: #4a5568;">⏰ Please submit before midnight for automated evaluation & detailed solution PDF.</small>
             </div>
         </div>
     </body>

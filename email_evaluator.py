@@ -76,8 +76,11 @@ def extract_drill_id_from_email(subject, body=""):
 def extract_answers_from_text(text, questions):
     """
     Extracts candidate answers from unstructured email reply text across multiple formats.
-    Preserves exact 1-to-1 index positioning so spaces, hyphens, and unattempted markers
-    do not shift subsequent answers left.
+    Supports:
+    1. Continuous Serial Streams (Upper, Lower, or Mixed Case e.g., "ABCDBADCB", "abcdbadcb", "AbdcABDcba")
+    2. Numbered Formats (e.g., "1A 2C 3B", "1.a 2.c 3.b", "1a2c3a")
+    3. Topic Block Streams (e.g., "abcd | bcda | cadb", "abcd / bcda", "abcd, bcda", "abcd - bcda")
+    4. Unattempted Markers ('.', '_', '-', 'X', 'x', ' ')
     """
     total_expected = len(questions) if (isinstance(questions, list) and len(questions) > 0) else 15
     result_answers = [None] * total_expected
@@ -93,8 +96,8 @@ def extract_answers_from_text(text, questions):
     if not cleaned_text:
         cleaned_text = text.strip()
 
-    # Method 1: Explicit Numbered format (e.g. 1. A, 2. B, 3. -, 4. X, 5. C or 1A 2B 3- 4C)
-    numbered_matches = re.findall(r'(?:Q|Question)?\s*(\d{1,3})[\s.:)\-]*([A-Da-d\-\sX_])', cleaned_text)
+    # Method 1: Explicit Numbered format (e.g. 1. A, 2. B, 3. -, 4. X, 5. C or 1A 2B 3- 4C or 1.a 2.b)
+    numbered_matches = re.findall(r'(?:Q|Question)?\s*(\d{1,3})[\s.:)\-]*([A-Da-d\-\sX_.\b])', cleaned_text)
     valid_numbered = []
     for q_num_str, opt in numbered_matches:
         try:
@@ -106,14 +109,14 @@ def extract_answers_from_text(text, questions):
 
     if len(valid_numbered) >= 3 or (len(valid_numbered) > 0 and len(valid_numbered) == total_expected):
         for q_num, opt in valid_numbered:
-            opt_upper = opt.upper()
+            opt_upper = opt.strip().upper()
             if opt_upper in ['A', 'B', 'C', 'D']:
                 result_answers[q_num - 1] = opt_upper
             else:
                 result_answers[q_num - 1] = None
         return result_answers
 
-    # Method 2: Delimited / Tokenized format (e.g. "A, B, -, D, E")
+    # Filter out header / signature lines
     lines = [l.strip() for l in cleaned_text.splitlines() if l.strip()]
     body_lines = [
         l for l in lines 
@@ -121,28 +124,20 @@ def extract_answers_from_text(text, questions):
     ]
     combined_text = " ".join(body_lines) if body_lines else cleaned_text
 
-    tokens = re.split(r'[,;\t]+', combined_text)
-    tokens = [t.strip() for t in tokens if t.strip()]
-    if len(tokens) == total_expected:
-        token_success = False
-        for idx, tok in enumerate(tokens):
-            tok_upper = tok.upper()
-            if tok_upper in ['A', 'B', 'C', 'D']:
-                result_answers[idx] = tok_upper
-                token_success = True
-            elif tok_upper in ['-', 'X', '_', 'UNATTEMPTED', 'NONE', '']:
-                result_answers[idx] = None
-                token_success = True
-        if token_success:
-            return result_answers
+    # Method 2: Check for Topic Block Delimiters (e.g. "abcd | bcda | cadb" or "abcd / bcda" or "abcd, bcda" or "abcd - bcda")
+    topic_blocks = re.split(r'\s*[\|\/,]\s*|\s+-\s+', combined_text)
+    if len(topic_blocks) > 1 and any(len(b.strip()) >= 2 for b in topic_blocks):
+        combined_text = "".join(b.strip() for b in topic_blocks)
 
-    # Method 3: Positional Character Stream (e.g., "ABCD A B--C D" or "DBCBCBBB... BCDBCACB" or "A   B  C")
+    # Method 3: Positional Character Stream (Upper, Lower, or Mixed Case + Unattempted Markers)
     stream_chars = []
     for char in combined_text:
         c_upper = char.upper()
         if c_upper in ['A', 'B', 'C', 'D']:
             stream_chars.append(c_upper)
-        elif char in [' ', '-', 'X', 'x', '_'] or c_upper.isalpha():
+        elif char in [' ', '-', '.', '_', 'X', 'x']:
+            stream_chars.append(None)
+        elif c_upper.isalpha():
             stream_chars.append(None)
 
     if len(stream_chars) >= 1:
