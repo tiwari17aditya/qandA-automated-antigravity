@@ -67,15 +67,17 @@ The project strictly follows single-responsibility decoupling and zero-cache exe
 ## ⚡ Slash Commands & Agent Skills
 
 ### Commands (`.agents/commands/`)
+- `/clean-repo` — Remove bytecode (`__pycache__`), clear `.pytest_cache`, prune local PDFs/logs, and maintain repo hierarchy.
 - `/daily-drill` — Generate and email today's drill on demand.
 - `/eval-replies` — Poll IMAP inbox and evaluate candidate responses.
 - `/weekly-report` — Aggregate 7-day progress and send AI mentor strategy report.
-- `/test-pipeline` — Run complete dry-run diagnostic tests for config, DB, AI, and email.
+- `/test-pipeline` — Run complete dry-run diagnostic tests for config, DB, AI, unit tests, and email.
 - `/modularize` — Audit modular structure and enforce zero-cache rules.
 - `/packup` — Stage, commit, bytecode clean, and push to `origin/main`.
 - `/update-docs` — Re-synchronize `.env.example`, `README.md`, and skill documents.
 
 ### Skills (`.agents/skills/`)
+- `project-structure-cleaner` — Folder hierarchy maintenance, bytecode purging, and scratch file pruning.
 - `token-optimized-mppsc` — Core zero-cache & Gemini token budget guidelines.
 - `mppsc-quiz-pipeline` — MCQ generation & failover logic.
 - `email-eval-workflow` — IMAP polling & response regex extraction runbook.
