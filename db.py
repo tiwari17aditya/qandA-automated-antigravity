@@ -175,6 +175,59 @@ def get_previous_test_data(current_date=None, pipeline_id="mppsc_default"):
         "breakdown": row[8] or [],
     }
 
+def get_quiz_by_drill_key(drill_id=None, target_date=None, pipeline_id="mppsc_default"):
+    """
+    Strictly queries daily_tests by test_id OR (pipeline_id AND test_date).
+    STRICT PROHIBITION: Never defaults to ORDER BY created_at DESC LIMIT 1.
+    Returns dict or None.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    row = None
+    if drill_id:
+        cursor.execute("""
+            SELECT test_id, test_date, pipeline_id, questions_json, total_questions, evaluated, status
+            FROM daily_tests
+            WHERE test_id = %s;
+        """, (drill_id,))
+        row = cursor.fetchone()
+
+        if not row and "DRILL-" in str(drill_id).upper():
+            clean_key = str(drill_id).upper().replace("DRILL-", "").split("-")[0]
+            if len(clean_key) == 8 and clean_key.isdigit():
+                formatted_date = f"{clean_key[:4]}-{clean_key[4:6]}-{clean_key[6:8]}"
+                cursor.execute("""
+                    SELECT test_id, test_date, pipeline_id, questions_json, total_questions, evaluated, status
+                    FROM daily_tests
+                    WHERE test_date = %s AND pipeline_id = %s;
+                """, (formatted_date, pipeline_id))
+                row = cursor.fetchone()
+
+    if not row and target_date:
+        cursor.execute("""
+            SELECT test_id, test_date, pipeline_id, questions_json, total_questions, evaluated, status
+            FROM daily_tests
+            WHERE test_date = %s AND pipeline_id = %s;
+        """, (target_date, pipeline_id))
+        row = cursor.fetchone()
+
+    cursor.close()
+    conn.close()
+
+    if not row:
+        return None
+
+    return {
+        "test_id": row[0],
+        "test_date": str(row[1]),
+        "pipeline_id": row[2],
+        "questions": row[3] or [],
+        "total_questions": row[4] or (len(row[3]) if row[3] else 0),
+        "evaluated": row[5],
+        "status": row[6],
+    }
+
 import json
 
 def sync_topic_stats_for_pipeline(pipeline_id=None):

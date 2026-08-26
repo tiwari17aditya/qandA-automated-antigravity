@@ -27,7 +27,13 @@ from config import (
     DATABASE_URL,
     validate_config,
 )
-from db import get_db_connection, init_and_migrate_db, mark_expired_tests_absent, sync_topic_stats_for_pipeline
+from db import (
+    get_db_connection,
+    init_and_migrate_db,
+    mark_expired_tests_absent,
+    sync_topic_stats_for_pipeline,
+    get_quiz_by_drill_key,
+)
 from alert_utils import send_error_alert
 
 def decode_email_subject(raw_subj):
@@ -45,6 +51,27 @@ def decode_email_subject(raw_subj):
         return subj
     except Exception:
         return str(raw_subj)
+
+def extract_drill_id_from_email(subject, body=""):
+    """
+    Extracts explicit drill_id (e.g. DRILL-20260826) or test date (YYYY-MM-DD)
+    from Subject line or Body text using regex.
+    """
+    if subject:
+        drill_match = re.search(r'DRILL-\d{8}(?:-\d+)?|DRILL-\d{4}-\d{2}-\d{2}(?:-\d+)?', subject, re.IGNORECASE)
+        if drill_match:
+            return drill_match.group(0).upper()
+
+    if body:
+        body_match = re.search(r'DRILL-\d{8}(?:-\d+)?|DRILL-\d{4}-\d{2}-\d{2}(?:-\d+)?', body, re.IGNORECASE)
+        if body_match:
+            return body_match.group(0).upper()
+
+    date_match = re.search(r'\d{4}-\d{2}-\d{2}', subject) or (re.search(r'\d{4}-\d{2}-\d{2}', body) if body else None)
+    if date_match:
+        return date_match.group(0)
+
+    return None
 
 def extract_answers_from_text(text, questions):
     """
@@ -623,28 +650,7 @@ def evaluate_pipeline_replies(pipe_cfg, mail, cursor, conn):
         if receiver_email and receiver_email.lower() not in from_header.lower() and SENDER_EMAIL.lower() not in from_header.lower():
             continue
 
-        date_match = re.search(r'\d{4}-\d{2}-\d{2}', subject)
-        if not date_match:
-            continue
-        target_date = date_match.group(0)
-
-        cursor.execute("""
-            SELECT questions_json, total_questions, evaluated, status 
-            FROM daily_tests 
-            WHERE test_date = %s AND pipeline_id = %s
-        """, (target_date, pipeline_id))
-        row = cursor.fetchone()
-        if not row:
-            continue
-        
-        questions = row[0]
-        total_questions = row[1] or len(questions)
-        is_evaluated = row[2]
-        current_status = row[3]
-
-        if is_evaluated and current_status == 'EVALUATED':
-            continue
-
+        # 4. Fetch email body first to allow deep header/body drill ID resolution
         res, b_data = mail.fetch(num, "(RFC822)")
         if not b_data or not b_data[0] or not isinstance(b_data[0], tuple):
             continue
@@ -658,6 +664,53 @@ def evaluate_pipeline_replies(pipe_cfg, mail, cursor, conn):
                     break
         else:
             body = msg.get_payload(decode=True).decode(errors="ignore")
+
+        # 5. Explicit Drill Key Extraction
+        extracted_drill_id = extract_drill_id_from_email(subject, body)
+        date_match = re.search(r'\d{4}-\d{2}-\d{2}', subject) or (re.search(r'\d{4}-\d{2}-\d{2}', body) if body else None)
+        target_date = date_match.group(0) if date_match else None
+
+        if not extracted_drill_id and not target_date:
+            continue
+
+        # 6. Database Verification Guardrail (Strict lookup without DESC LIMIT 1 fallback)
+        quiz_record = get_quiz_by_drill_key(drill_id=extracted_drill_id, target_date=target_date, pipeline_id=pipeline_id)
+
+        if not quiz_record:
+            alert_msg = f"Drill Key Mismatch Alert: Extracted drill_id '{extracted_drill_id}' (target_date: '{target_date}') for pipeline '{pipeline_id}' does not exist in database."
+            print(f"   [ALERT] {alert_msg}")
+            send_error_alert("Drill Key Verification Guardrail", alert_msg)
+            
+            if target_date:
+                cursor.execute("""
+                    UPDATE daily_tests
+                    SET status = 'UNRESOLVED_DRILL_KEY'
+                    WHERE test_date = %s AND pipeline_id = %s AND (evaluated = FALSE OR evaluated IS NULL);
+                """, (target_date, pipeline_id))
+                conn.commit()
+            continue
+
+        target_date = quiz_record["test_date"]
+        questions = quiz_record["questions"]
+        total_questions = quiz_record["total_questions"]
+        is_evaluated = quiz_record["evaluated"]
+        current_status = quiz_record["status"]
+
+        if is_evaluated and current_status == 'EVALUATED':
+            continue
+
+        # 7. Metadata & Content Sanity Check
+        if not questions or not isinstance(questions, list) or len(questions) == 0:
+            sanity_err = f"Drill Metadata Sanity Failure: Question bank for drill '{extracted_drill_id}' in pipeline '{pipeline_id}' is empty or corrupt."
+            print(f"   [ALERT] {sanity_err}")
+            send_error_alert("Drill Metadata Sanity Failure", sanity_err)
+            cursor.execute("""
+                UPDATE daily_tests
+                SET status = 'UNRESOLVED_DRILL_KEY'
+                WHERE test_date = %s AND pipeline_id = %s;
+            """, (target_date, pipeline_id))
+            conn.commit()
+            continue
 
         user_answers = extract_answers_from_text(body, questions)
         if not user_answers or all(a is None for a in user_answers):

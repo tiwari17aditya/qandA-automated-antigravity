@@ -379,7 +379,8 @@ def run_pipeline_daily_quiz(pipe_cfg, dry_run=False):
     logger.info(f"Saved to daily_tests table as PENDING for pipeline [{pipeline_id}].")
 
     # 4. Dispatch Email
-    subject = f"🎯 [{exam_name}] Daily Drill - {today_str}"
+    drill_key = f"DRILL-{today_str.replace('-', '')}"
+    subject = f"🎯 [{exam_name}] Daily Drill - {today_str} [{drill_key}]"
     html_body = create_html_email(today_str, questions, topic_desc, exam_name=exam_name, student_name=student_name)
     send_email(subject, html_body, pdf_bytes, pdf_filename, receiver_email, logger=logger)
     logger.info(f"Daily Quiz for {student_name} ({exam_name}) sent and recorded successfully!")
