@@ -43,9 +43,10 @@ The codebase is built on a decoupled, single-responsibility architecture:
 
 | Command | File | Description |
 | :--- | :--- | :--- |
+| **`/clean-repo`** | [clean-repo.md](file:///.agents/commands/clean-repo.md) | Removes bytecode (`__pycache__`), clears `.pytest_cache`, prunes loose scratch PDFs, and maintains clean repository hierarchy. |
 | **`/packup`** | [packup.md](file:///.agents/commands/packup.md) | Cleans bytecode (`__pycache__`), syncs docs, stages all changes, creates conventional commit, and pushes to `origin/main`. |
 | **`/modularize`** | [modularize.md](file:///.agents/commands/modularize.md) | Audits code structure after feature addition, decouples logic, enforces zero-cache constraints, and verifies imports. |
-| **`/test-pipeline`** | [test-pipeline.md](file:///.agents/commands/test-pipeline.md) | Runs end-to-end dry-run diagnostics for config, database, AI providers, and email handlers. |
+| **`/test-pipeline`** | [test-pipeline.md](file:///.agents/commands/test-pipeline.md) | Runs end-to-end dry-run diagnostics for config, database, AI providers, unit tests, and email handlers. |
 | **`/update-docs`** | [update-docs.md](file:///.agents/commands/update-docs.md) | Keeps `.env.example`, `README.md`, and skill guides in sync with codebase changes. |
 | **`/daily-drill`** | [daily-drill.md](file:///.agents/commands/daily-drill.md) | Generates and sends today's MPPSC quiz email on demand. |
 | **`/eval-replies`** | [eval-replies.md](file:///.agents/commands/eval-replies.md) | Polls IMAP inbox, grades pending quiz replies, and sends scorecard emails. |
@@ -55,6 +56,7 @@ The codebase is built on a decoupled, single-responsibility architecture:
 
 ## 🧠 Agent Skills (`.agents/skills/`)
 
+- **[project-structure-cleaner](file:///.agents/skills/project-structure-cleaner/SKILL.md)**: Procedures for enforcing clean folder hierarchy, purging bytecode/caches, and preventing root scratch clutter.
 - **[token-optimized-mppsc](file:///.agents/skills/token-optimized-mppsc/SKILL.md)**: Zero-cache GitHub Actions, strict token quotas (explanation $\le 15$ words), and auto-sync rules.
 - **[mppsc-quiz-pipeline](file:///.agents/skills/mppsc-quiz-pipeline/SKILL.md)**: Daily quiz generation with Gemini/Groq dual failover and PostgreSQL persistence.
 - **[email-eval-workflow](file:///.agents/skills/email-eval-workflow/SKILL.md)**: IMAP email polling, answer regex extraction, and scoring against test keys.

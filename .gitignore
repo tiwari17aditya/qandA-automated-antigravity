@@ -3,17 +3,21 @@
 .env.local
 .env.*.local
 
-# Python cache & virtual environments
+# Python cache, pytest & virtual environments
 __pycache__/
 *.py[cod]
 *$py.class
 venv/
 .venv/
 env/
+.pytest_cache/
 
 # IDE / Editor folders
 .vscode/
 .idea/
 
-# Local logs and dry-run PDFs
+# Local logs, scratch files, and dry-run PDFs
 logs/
+*.log
+scratch_*.pdf
+dryrun_*.pdf
