@@ -142,11 +142,11 @@ def call_groq_api(api_key: str, model: str, prompt: str, response_json: bool = F
 def generate_ai_completion(prompt: str, response_json: bool = False) -> str:
     """
     Unified multi-provider AI completion engine with automatic failover across:
-    1. Google Gemini Pool: gemini-3.6-flash, gemini-3.5-flash-lite, gemini-2.5-flash
-    2. Groq Open-Source Pool: qwen/qwen3.6-27b, groq/compound, openai/gpt-oss-120b, openai/gpt-oss-20b
+    1. Google Gemini Pool: gemini-2.5-flash, gemini-2.0-flash, gemini-1.5-flash-latest
+    2. Groq Open-Source Pool: llama-3.3-70b-versatile, llama-3.1-8b-instant, llama3-70b-8192, deepseek-r1-distill-llama-70b
     """
-    gemini_models = [GEMINI_MODEL, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
-    groq_models = [GROQ_MODEL, "llama-3.3-70b-versatile", "qwen-2.5-32b", "mixtral-8x7b-32768"]
+    gemini_models = [GEMINI_MODEL, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash-latest"]
+    groq_models = [GROQ_MODEL, "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "llama3-70b-8192", "deepseek-r1-distill-llama-70b", "gemma2-9b-it"]
 
     # Filter duplicates while preserving order
     gemini_pool = [m for i, m in enumerate(gemini_models) if m and m not in gemini_models[:i]]
