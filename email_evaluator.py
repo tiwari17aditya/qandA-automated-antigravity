@@ -49,77 +49,78 @@ def decode_email_subject(raw_subj):
 def extract_answers_from_text(text, questions):
     """
     Extracts candidate answers from unstructured email reply text across multiple formats.
+    Preserves exact 1-to-1 index positioning so spaces, hyphens, and unattempted markers
+    do not shift subsequent answers left.
     """
-    total_expected = len(questions)
-    
-    cleaned_text = re.split(r'On\s+.*wrote:|\n\s*>\s*|\n--\s*\n|Sent from my', text, flags=re.IGNORECASE)[0].strip()
+    total_expected = len(questions) if (isinstance(questions, list) and len(questions) > 0) else 15
+    result_answers = [None] * total_expected
+
+    if not text or not isinstance(text, str):
+        return result_answers
+
+    cleaned_text = re.split(
+        r'On\s+.*wrote:|\n\s*>\s*|\n--\s*\n|Sent from my|Regards,|Best regards,',
+        text,
+        flags=re.IGNORECASE
+    )[0].strip()
     if not cleaned_text:
         cleaned_text = text.strip()
 
-    result_answers = [None] * total_expected
-
-    # Method 1: Check if candidate grouped answers by topics
-    topic_blocks = re.findall(r'(?:<|\[|Topic:?|\b)([a-zA-Z0-9\s\-&,]+)(?:>|\]|:|\-)\s*([A-Da-d\s,.\d\(\)]+)', cleaned_text)
-    if topic_blocks:
-        topic_q_indices = {}
-        for idx, q in enumerate(questions):
-            t_name = q.get("topic", "").lower().strip()
-            topic_q_indices.setdefault(t_name, []).append(idx)
-        
-        mapped_count = 0
-        for block_topic, block_ans_str in topic_blocks:
-            norm_bt = block_topic.lower().strip()
-            best_match_key = None
-            for tk in topic_q_indices:
-                if tk in norm_bt or norm_bt in tk or any(w in norm_bt for w in tk.split() if len(w) > 3):
-                    best_match_key = tk
-                    break
-            
-            numbered_in_block = re.findall(r'(?:Q|Question)?\s*(\d{1,2})[\s.:)\-]*([A-Da-d])', block_ans_str)
-            if numbered_in_block:
-                for q_num_str, opt in numbered_in_block:
-                    q_num = int(q_num_str)
-                    if 1 <= q_num <= total_expected:
-                        result_answers[q_num - 1] = opt.upper()
-                        mapped_count += 1
-            else:
-                pure_chars = [c.upper() for c in re.findall(r'\b[A-Da-d]\b|[A-Da-d]', block_ans_str)]
-                if best_match_key and pure_chars:
-                    target_indices = topic_q_indices[best_match_key]
-                    for i, char in enumerate(pure_chars):
-                        if i < len(target_indices):
-                            result_answers[target_indices[i]] = char
-                            mapped_count += 1
-        
-        if mapped_count >= (total_expected // 2):
-            return result_answers
-
-    # Method 2: Standard Numbered format across whole text (e.g. 1A 2B 3C)
-    numbered_matches = re.findall(r'(?:Q|Question)?\s*(\d{1,2})[\s.:)\-]*([A-Da-d])', cleaned_text)
-    if numbered_matches:
-        num_found = 0
-        for q_num_str, opt in numbered_matches:
+    # Method 1: Explicit Numbered format (e.g. 1. A, 2. B, 3. -, 4. X, 5. C or 1A 2B 3- 4C)
+    numbered_matches = re.findall(r'(?:Q|Question)?\s*(\d{1,3})[\s.:)\-]*([A-Da-d\-\sX_])', cleaned_text)
+    valid_numbered = []
+    for q_num_str, opt in numbered_matches:
+        try:
             q_num = int(q_num_str)
             if 1 <= q_num <= total_expected:
-                result_answers[q_num - 1] = opt.upper()
-                num_found += 1
-        if num_found >= 3:
+                valid_numbered.append((q_num, opt))
+        except ValueError:
+            continue
+
+    if len(valid_numbered) >= 3 or (len(valid_numbered) > 0 and len(valid_numbered) == total_expected):
+        for q_num, opt in valid_numbered:
+            opt_upper = opt.upper()
+            if opt_upper in ['A', 'B', 'C', 'D']:
+                result_answers[q_num - 1] = opt_upper
+            else:
+                result_answers[q_num - 1] = None
+        return result_answers
+
+    # Method 2: Delimited / Tokenized format (e.g. "A, B, -, D, E")
+    lines = [l.strip() for l in cleaned_text.splitlines() if l.strip()]
+    body_lines = [
+        l for l in lines 
+        if not re.search(r'\b(aditya|tiwari|thanks|regards|hello|hi|dear|sent|from|subject|drill)\b', l, re.IGNORECASE)
+    ]
+    combined_text = " ".join(body_lines) if body_lines else cleaned_text
+
+    tokens = re.split(r'[,;\t]+', combined_text)
+    tokens = [t.strip() for t in tokens if t.strip()]
+    if len(tokens) == total_expected:
+        token_success = False
+        for idx, tok in enumerate(tokens):
+            tok_upper = tok.upper()
+            if tok_upper in ['A', 'B', 'C', 'D']:
+                result_answers[idx] = tok_upper
+                token_success = True
+            elif tok_upper in ['-', 'X', '_', 'UNATTEMPTED', 'NONE', '']:
+                result_answers[idx] = None
+                token_success = True
+        if token_success:
             return result_answers
 
-    # Method 3: Continuous character stream or space/comma separated letters
-    lines = cleaned_text.splitlines()
-    candidate_chars = []
-    for line in lines:
-        l_strip = line.strip()
-        if re.search(r'\b(aditya|tiwari|thanks|regards|hello|hi|dear|sent|from)\b', l_strip, re.IGNORECASE):
-            continue
-        chars = re.findall(r'[A-Da-d]', l_strip)
-        if len(chars) > 0 and (len(chars) / max(len(l_strip.replace(" ", "").replace(",", "").replace(".", "")), 1)) >= 0.7:
-            candidate_chars.extend(chars)
+    # Method 3: Positional Character Stream (e.g., "ABCD A B--C D" or "DBCBCBBB... BCDBCACB" or "A   B  C")
+    stream_chars = []
+    for char in combined_text:
+        c_upper = char.upper()
+        if c_upper in ['A', 'B', 'C', 'D']:
+            stream_chars.append(c_upper)
+        elif char in [' ', '-', 'X', 'x', '_'] or c_upper.isalpha():
+            stream_chars.append(None)
 
-    if len(candidate_chars) >= 3 and abs(len(candidate_chars) - total_expected) <= 3:
-        for idx in range(min(len(candidate_chars), total_expected)):
-            result_answers[idx] = candidate_chars[idx].upper()
+    if len(stream_chars) >= 1:
+        for idx in range(min(len(stream_chars), total_expected)):
+            result_answers[idx] = stream_chars[idx]
         return result_answers
 
     # Method 4: AI Fallback Parser
@@ -130,8 +131,8 @@ def extract_answers_from_text(text, questions):
         Email text:
         \"\"\"{cleaned_text}\"\"\"
 
-        Return ONLY a JSON object mapping question number string to option letter (A, B, C, or D):
-        {{"1": "A", "2": "C", ...}}
+        Return ONLY a JSON object mapping question number string to option letter ('A', 'B', 'C', 'D') or null for unattempted/skipped questions.
+        Example: {{"1": "A", "2": null, "3": "C"}}
         """
         raw_ai = generate_ai_completion(prompt=ai_prompt, response_json=True)
         cleaned_json = clean_ai_json_output(raw_ai)
@@ -143,9 +144,13 @@ def extract_answers_from_text(text, questions):
             for k, v in parsed_dict.items():
                 try:
                     q_idx = int(k) - 1
-                    if 0 <= q_idx < total_expected and str(v).upper() in ["A", "B", "C", "D"]:
-                        result_answers[q_idx] = str(v).upper()
-                        ai_found += 1
+                    if 0 <= q_idx < total_expected:
+                        val_upper = str(v).upper() if v is not None else ""
+                        if val_upper in ["A", "B", "C", "D"]:
+                            result_answers[q_idx] = val_upper
+                            ai_found += 1
+                        else:
+                            result_answers[q_idx] = None
                 except ValueError:
                     continue
             if ai_found > 0:
@@ -153,7 +158,7 @@ def extract_answers_from_text(text, questions):
     except Exception as parse_err:
         print(f"[WARN] AI answer parser fallback encountered error: {parse_err}")
 
-    return None
+    return result_answers
 
 from pdf_font_utils import register_unicode_fonts
 
