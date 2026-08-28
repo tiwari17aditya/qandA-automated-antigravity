@@ -31,7 +31,7 @@ from config import (
     validate_config,
 )
 from db import get_db_connection, init_and_migrate_db, mark_expired_tests_absent
-from alert_utils import send_error_alert, generate_ai_completion, clean_ai_json_output
+from alert_utils import send_error_alert, generate_ai_completion, clean_ai_json_output, parse_ai_json_output
 
 from logger_utils import get_pipeline_logger
 import os
@@ -53,8 +53,7 @@ def generate_questions_for_pipeline(pipe_cfg, logger=None):
         prompt=prompt,
         response_json=True
     )
-    cleaned_json = clean_ai_json_output(raw_response)
-    questions = json.loads(cleaned_json)
+    questions = parse_ai_json_output(raw_response)
     if isinstance(questions, dict):
         for key in ["questions", "data", "quiz", "mcqs", "items"]:
             if key in questions and isinstance(questions[key], list):

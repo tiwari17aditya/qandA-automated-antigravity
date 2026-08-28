@@ -125,3 +125,22 @@ def test_db_verification_guardrail_nonexistent():
     """
     record = get_quiz_by_drill_key(drill_id="DRILL-19990101", target_date="1999-01-01", pipeline_id="non_existent_pipeline")
     assert record is None
+
+def test_parse_ai_json_output_recovery():
+    """
+    Test parse_ai_json_output with markdown codeblocks, trailing commas, and reasoning tags.
+    """
+    from alert_utils import parse_ai_json_output
+    raw = """
+    <think>DeepSeek reasoning thinking steps</think>
+    ```json
+    [
+      {"q_num": 1, "question": "Q1 text", "options": {"A": "1", "B": "2"}, "correct_option": "A", "explanation": "exp1"},
+      {"q_num": 2, "question": "Q2 text", "options": {"A": "3", "B": "4"}, "correct_option": "B", "explanation": "exp2"},
+    ]
+    ```
+    """
+    parsed = parse_ai_json_output(raw)
+    assert len(parsed) == 2
+    assert parsed[0]["q_num"] == 1
+    assert parsed[1]["q_num"] == 2

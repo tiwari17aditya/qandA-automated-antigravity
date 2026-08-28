@@ -86,6 +86,36 @@ def clean_ai_json_output(raw_text: str) -> str:
         cleaned = fence_match.group(1).strip()
     return cleaned
 
+def parse_ai_json_output(raw_text: str):
+    """
+    Robust JSON parser with multi-tier error recovery for AI outputs:
+    1. Standard json.loads on cleaned text
+    2. Trailing comma sanitization
+    3. Regex extraction of individual JSON objects
+    """
+    cleaned = clean_ai_json_output(raw_text)
+    try:
+        return json.loads(cleaned)
+    except Exception:
+        # Sanitize trailing commas before closing brackets/braces
+        sanitized = re.sub(r",\s*([\]}])", r"\1", cleaned)
+        try:
+            return json.loads(sanitized)
+        except Exception:
+            # Fallback: extract individual JSON objects using regex
+            objects = []
+            matches = re.finditer(r"\{[^{}]*?(?:\"[^\"]*\"[^{}]*?)*\}", cleaned, flags=re.DOTALL)
+            for m in matches:
+                try:
+                    obj = json.loads(m.group(0))
+                    if isinstance(obj, dict):
+                        objects.append(obj)
+                except Exception:
+                    continue
+            if objects:
+                return objects
+            return json.loads(cleaned)
+
 def call_groq_api(api_key: str, model: str, prompt: str, response_json: bool = False) -> str:
     """
     Direct HTTP client for Groq OpenAI-compatible chat completion API.
@@ -142,11 +172,11 @@ def call_groq_api(api_key: str, model: str, prompt: str, response_json: bool = F
 def generate_ai_completion(prompt: str, response_json: bool = False) -> str:
     """
     Unified multi-provider AI completion engine with automatic failover across:
-    1. Google Gemini Pool: gemini-2.5-flash, gemini-2.0-flash
-    2. Groq Open-Source Pool: llama-3.3-70b-versatile, llama-3.1-8b-instant, llama3-8b-8192, mistral-saba-24b
+    1. Google Gemini Pool: gemini-2.5-flash, gemini-3.6-flash, gemini-3.5-flash, gemini-3.5-flash-lite
+    2. Groq Open-Source Pool: qwen/qwen3.8-27b, qwen/qwen3.6-27b, groq/compound, openai/gpt-oss-120b
     """
-    gemini_models = [GEMINI_MODEL, "gemini-2.5-flash", "gemini-2.0-flash"]
-    groq_models = [GROQ_MODEL, "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "llama3-8b-8192", "mistral-saba-24b"]
+    gemini_models = [GEMINI_MODEL, "gemini-2.5-flash", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-flash-latest"]
+    groq_models = [GROQ_MODEL, "qwen/qwen3.8-27b", "qwen/qwen3.6-27b", "groq/compound", "openai/gpt-oss-120b"]
 
     # Filter duplicates while preserving order
     gemini_pool = [m for i, m in enumerate(gemini_models) if m and m not in gemini_models[:i]]
