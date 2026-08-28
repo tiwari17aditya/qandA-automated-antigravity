@@ -1,6 +1,6 @@
 # 🧠 Project Memory & System Context
 
-> **Last Updated**: August 26, 2026  
+> **Last Updated**: August 28, 2026  
 > **Repository**: `tiwari17aditya/qandA-automated-antigravity`  
 > **Target Exam**: MPPSC (Madhya Pradesh Public Service Commission) State Services Examination  
 > **Architecture**: AI-driven, Serverless, Decoupled Python Automation Pipeline with PostgreSQL & GitHub Actions  
@@ -19,9 +19,9 @@ The project strictly follows single-responsibility decoupling and zero-cache exe
 
 | Module / File | Responsibility & Details |
 | :--- | :--- |
-| **[`config.py`](file:///d:/mppsc/QandA-automated-antigravity/config.py)** | Centralized configuration loader for env variables, topics, target limits, and structured AI prompt builders (bilingual MPPSC MCQs, strict JSON output schemas, $\le 15$ words per explanation). |
+| **[`config.py`](file:///d:/mppsc/QandA-automated-antigravity/config.py)** | Centralized configuration loader for env variables, topics, target limits, and structured AI prompt builders (bilingual MPPSC MCQs, strict JSON output schemas, $\le 15$ words per explanation). Default models: `gemini-2.5-flash` and `qwen/qwen3.8-27b`. |
 | **[`db.py`](file:///d:/mppsc/QandA-automated-antigravity/db.py)** | PostgreSQL / Supabase connection manager with connection pooling, retries, and automatic migrations for 4 core tables. |
-| **[`alert_utils.py`](file:///d:/mppsc/QandA-automated-antigravity/alert_utils.py)** | Multi-provider AI invoker (`gemini_generate_with_retry`, `groq_generate_with_retry`) with exponential backoff + jitter and admin error alert email dispatching. |
+| **[`alert_utils.py`](file:///d:/mppsc/QandA-automated-antigravity/alert_utils.py)** | Multi-provider AI invoker with active failover pools (`gemini-2.5-flash`, `gemini-3.6-flash`, `gemini-3.5-flash`, `qwen/qwen3.8-27b`, `groq/compound`), 3-tier fault-tolerant JSON parser `parse_ai_json_output()`, and admin error alert email dispatching. |
 | **[`daily_quiz_sender.py`](file:///d:/mppsc/QandA-automated-antigravity/daily_quiz_sender.py)** | Daily drill pipeline: generates MCQs via AI, assigns unique `DRILL-YYYYMMDD` ID, stores key in PostgreSQL, renders responsive HTML + PDF (Hindi Unicode font support), and emails candidate. |
 | **[`email_evaluator.py`](file:///d:/mppsc/QandA-automated-antigravity/email_evaluator.py)** | Candidate reply processing: polls Gmail IMAP inbox, extracts candidate answers using regex, scores against answer key in DB, updates `mastery_stats`, and emails instant scorecard. |
 | **[`weekly_report_sender.py`](file:///d:/mppsc/QandA-automated-antigravity/weekly_report_sender.py)** | Analytics aggregator: computes 7-day attendance, accuracy KPIs, topic accuracy breakdowns, identifies weak topics (<70%), generates AI mentor review, and sends HTML weekly report. |
@@ -49,7 +49,8 @@ The project strictly follows single-responsibility decoupling and zero-cache exe
 ### 2. AI Token Optimization & Multi-Provider Resilience
 - **Strict JSON Output Schemas**: All AI prompts enforce `response_mime_type="application/json"`.
 - **Concise Explanations**: MCQ explanations are strictly capped at $\le 15$ words per question to save output tokens.
-- **Failover Chain**: Google Gemini (`gemini-2.5-flash`) as primary, Groq (`deepseek-r1-distill-llama-70b`) as fallback upon 429/5xx error.
+- **Active Failover Chain**: Google Gemini (`gemini-2.5-flash` $\rightarrow$ `gemini-3.6-flash` $\rightarrow$ `gemini-3.5-flash`) as primary, Groq (`qwen/qwen3.8-27b` $\rightarrow$ `qwen/qwen3.6-27b` $\rightarrow$ `groq/compound`) as fallback upon 429/5xx error.
+- **Fault-Tolerant Parsing**: Multi-tier `parse_ai_json_output` recovers from trailing commas, codeblock fences, or truncated reasoning blocks.
 
 ### 3. Automated Git Packup
 - Any task completion requires cleaning bytecode, committing with clear messages, and pushing to `origin/main`.
@@ -58,8 +59,8 @@ The project strictly follows single-responsibility decoupling and zero-cache exe
 
 ## ⚙️ CI/CD Workflows (`.github/workflows/`)
 
-- **`daily_quiz.yml`**: Cron `30 1 * * *` (07:00 AM IST daily) → executes `daily_quiz_sender.py`.
-- **`check_replies.yml`**: Cron `0 * * * *` (Hourly) → executes `email_evaluator.py`.
+- **`daily_quiz.yml`**: Cron `30 2 * * *` (08:00 AM IST daily) → executes `daily_quiz_sender.py`.
+- **`check_replies.yml`**: Cron `30 5,9,13,17 * * *` (11:00 AM, 03:00 PM, 07:00 PM, 11:00 PM IST daily) → executes `email_evaluator.py`.
 - **`weekly_report.yml`**: Cron `30 14 * * 0` (Sunday 08:00 PM IST) → executes `weekly_report_sender.py`.
 
 ---
