@@ -18,6 +18,8 @@ on:
 jobs:
   evaluate-quiz:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     env:
       PYTHONDONTWRITEBYTECODE: "1" # Do not write .pyc cache files
     steps:
@@ -44,8 +46,9 @@ jobs:
           GEMINI_MODEL: ${{ secrets.GEMINI_MODEL || vars.GEMINI_MODEL }}
           GROQ_MODEL: ${{ secrets.GROQ_MODEL || vars.GROQ_MODEL }}
         run: |
-          if [ "${{ inputs.pipeline_id }}" != "" ] && [ "${{ inputs.pipeline_id }}" != "all" ]; then
-            python -B email_evaluator.py --pipeline ${{ inputs.pipeline_id }}
+          PIPELINE="${{ inputs.pipeline_id }}"
+          if [ -n "$PIPELINE" ] && [ "$PIPELINE" != "all" ]; then
+            python -B email_evaluator.py --pipeline "$PIPELINE"
           else
             python -B email_evaluator.py
           fi
